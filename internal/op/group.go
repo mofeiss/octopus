@@ -169,7 +169,10 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	// 刷新缓存并返回最新数据
+	// [fork] 先清理旧的 groupMap 条目，再刷新缓存（顺序不可颠倒，否则新别名会被误删）
+	groupMapDelAliases(oldGroup.RouteAliases)
+
+	// 刷新缓存并返回最新数据（groupMapSetWithAliases 会重新设置新的 name + aliases）
 	if err := groupRefreshCacheByID(req.ID, ctx); err != nil {
 		return nil, err
 	}
@@ -178,7 +181,6 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	if oldName != "" && oldName != group.Name {
 		groupMap.Del(oldName)
 	}
-	groupMapDelAliases(oldGroup.RouteAliases) // [fork] clean up old alias entries
 	return &group, nil
 }
 
