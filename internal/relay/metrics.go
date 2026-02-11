@@ -141,29 +141,44 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		TotalAttempts:    len(attempts),
 	}
 
-	// [fork] populate channel key info from the attempt that actually served the request
-	var usedKeyID int
-	for i := len(attempts) - 1; i >= 0; i-- {
-		if attempts[i].ChannelKeyID > 0 {
-			usedKeyID = attempts[i].ChannelKeyID
-			break
+	// [fork] populate channel key info for each attempt
+	channelCache := make(map[int]*model.Channel)
+	for i := range attempts {
+		a := &attempts[i]
+		if a.ChannelKeyID <= 0 {
+			continue
+		}
+		ch, ok := channelCache[a.ChannelID]
+		if !ok {
+			if fetched, chErr := op.ChannelGet(a.ChannelID, ctx); chErr == nil {
+				ch = fetched
+			}
+			channelCache[a.ChannelID] = ch // cache even nil to avoid re-fetch
+		}
+		if ch == nil {
+			continue
+		}
+		for idx, k := range ch.Keys {
+			if k.ID == a.ChannelKeyID {
+				a.ChannelKeyIndex = idx + 1
+				a.ChannelKeyRemark = k.Remark
+				key := k.ChannelKey
+				if len(key) >= 8 {
+					a.ChannelKeyPreview = key[:4] + "..." + key[len(key)-4:]
+				} else {
+					a.ChannelKeyPreview = key
+				}
+				break
+			}
 		}
 	}
-	if usedKeyID > 0 && channelID > 0 {
-		if ch, chErr := op.ChannelGet(channelID, ctx); chErr == nil {
-			for idx, k := range ch.Keys {
-				if k.ID == usedKeyID {
-					relayLog.ChannelKeyIndex = idx + 1
-					relayLog.ChannelKeyRemark = k.Remark
-					key := k.ChannelKey
-					if len(key) >= 8 {
-						relayLog.ChannelKeyPreview = key[:4] + "..." + key[len(key)-4:]
-					} else {
-						relayLog.ChannelKeyPreview = key
-					}
-					break
-				}
-			}
+	// [fork] populate RelayLog-level channel key from the last valid attempt (backward compat)
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if attempts[i].ChannelKeyPreview != "" {
+			relayLog.ChannelKeyIndex = attempts[i].ChannelKeyIndex
+			relayLog.ChannelKeyRemark = attempts[i].ChannelKeyRemark
+			relayLog.ChannelKeyPreview = attempts[i].ChannelKeyPreview
+			break
 		}
 	}
 	// [fork] populate user apikey name

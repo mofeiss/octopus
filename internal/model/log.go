@@ -21,6 +21,10 @@ type ChannelAttempt struct {
 	Duration     int           `json:"duration"`
 	Sticky       bool          `json:"sticky,omitempty"`
 	Msg          string        `json:"msg,omitempty"`
+	// [fork] channel key display info
+	ChannelKeyIndex   int    `json:"channel_key_index,omitempty"`
+	ChannelKeyPreview string `json:"channel_key_preview,omitempty"`
+	ChannelKeyRemark  string `json:"channel_key_remark,omitempty"`
 }
 
 type RelayLog struct {

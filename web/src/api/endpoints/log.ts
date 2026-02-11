@@ -22,6 +22,10 @@ export interface ChannelAttempt {
     duration: number;       // 耗时(毫秒)
     sticky?: boolean;
     msg?: string;
+    // [fork] channel key display info
+    channel_key_index?: number;
+    channel_key_preview?: string;
+    channel_key_remark?: string;
 }
 
 /**

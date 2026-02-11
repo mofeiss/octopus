@@ -443,6 +443,26 @@ export function LogCard({ log }: { log: RelayLog }) {
                                                                             <span className="text-muted-foreground">
                                                                                 ({attempt.model_name})
                                                                             </span>
+                                                                            {/* [fork] attempt channel key info */}
+                                                                            {attempt.channel_key_preview && (
+                                                                                <>
+                                                                                    <Badge
+                                                                                        variant="secondary"
+                                                                                        className="shrink-0 text-[10px] px-1 py-0"
+                                                                                        style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
+                                                                                    >
+                                                                                        {attempt.channel_key_index}
+                                                                                    </Badge>
+                                                                                    {attempt.channel_key_remark && (
+                                                                                        <Badge variant="secondary" className="shrink-0 text-[10px] px-1 py-0">
+                                                                                            {attempt.channel_key_remark}
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                    <span className="text-muted-foreground truncate">
+                                                                                        {attempt.channel_key_preview}
+                                                                                    </span>
+                                                                                </>
+                                                                            )}
                                                                             <span className="ml-auto text-muted-foreground tabular-nums font-mono">
                                                                                 {formatDuration(attempt.duration)}
                                                                             </span>
