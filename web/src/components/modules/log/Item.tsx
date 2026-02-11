@@ -238,10 +238,18 @@ export function LogCard({ log }: { log: RelayLog }) {
                                         <Badge
                                             variant="secondary"
                                             className="shrink-0 text-xs px-1.5 py-0"
-                                            title={`[${log.channel_key_index}] ${log.channel_key_preview}${log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}`}
+                                            style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                         >
-                                            [{log.channel_key_index}] {log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
+                                            {log.channel_key_index}
                                         </Badge>
+                                        {log.channel_key_remark && (
+                                            <Badge variant="secondary" className="shrink-0 text-xs px-1.5 py-0">
+                                                {log.channel_key_remark}
+                                            </Badge>
+                                        )}
+                                        <span className="text-muted-foreground truncate" title={log.channel_key_preview}>
+                                            {log.channel_key_preview}
+                                        </span>
                                     </>
                                 )}
                                 {log.attempts?.some(a => a.sticky) && (
@@ -322,10 +330,18 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <Badge
                                         variant="secondary"
                                         className="shrink-0 text-xs px-1.5 py-0"
-                                        title={`[${log.channel_key_index}] ${log.channel_key_preview}${log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}`}
+                                        style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                     >
-                                        [{log.channel_key_index}] {log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
+                                        {log.channel_key_index}
                                     </Badge>
+                                    {log.channel_key_remark && (
+                                        <Badge variant="secondary" className="shrink-0 text-xs px-1.5 py-0">
+                                            {log.channel_key_remark}
+                                        </Badge>
+                                    )}
+                                    <span className="text-muted-foreground truncate" title={log.channel_key_preview}>
+                                        {log.channel_key_preview}
+                                    </span>
                                 </>
                             )}
                             {log.attempts?.some(a => a.sticky) && (
