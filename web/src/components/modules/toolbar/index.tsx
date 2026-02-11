@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, X, Trash2 } from 'lucide-react'; // [fork] added Trash2
 import { motion, AnimatePresence } from 'motion/react';
 import {
     MorphingDialog,
@@ -9,7 +9,7 @@ import {
     MorphingDialogContainer,
     MorphingDialogContent,
 } from '@/components/ui/morphing-dialog';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button'; // [fork] added Button
 import { useNavStore, type NavItem } from '@/components/modules/navbar';
 import { CreateDialogContent as ChannelCreateContent } from '@/components/modules/channel/Create';
 import { CreateDialogContent as GroupCreateContent } from '@/components/modules/group/Create';
@@ -17,6 +17,10 @@ import { CreateDialogContent as GroupCreateContent } from '@/components/modules/
 // import { CreateDialogContent as ModelCreateContent } from '@/components/modules/model/Create';
 import { useSearchStore } from './search-store';
 import { usePaginationStore } from './pagination-store';
+// [fork] log clear button
+import { useClearLogs } from '@/api/endpoints/log';
+import { toast } from '@/components/common/Toast';
+import { useTranslations } from 'next-intl';
 
 const TOOLBAR_PAGES: NavItem[] = ['channel', 'group']; // [fork] removed 'model'
 
@@ -32,6 +36,47 @@ function CreateDialogContent({ activeItem }: { activeItem: NavItem }) {
         default:
             return null;
     }
+}
+
+// [fork] log clear button
+function LogClearButton() {
+    const t = useTranslations('setting');
+    const clearLogs = useClearLogs();
+    const [isClearing, setIsClearing] = useState(false);
+
+    const handleClear = () => {
+        setIsClearing(true);
+        clearLogs.mutate(undefined, {
+            onSuccess: () => {
+                toast.success(t('log.clearSuccess'));
+                setIsClearing(false);
+            },
+            onError: () => {
+                toast.error(t('log.clearFailed'));
+                setIsClearing(false);
+            }
+        });
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+        >
+            <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClear}
+                disabled={isClearing}
+                className="rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent"
+                title={t('log.clear.label')}
+            >
+                <Trash2 className="size-4 transition-colors duration-300" />
+            </Button>
+        </motion.div>
+    );
 }
 
 export function Toolbar() {
@@ -147,6 +192,10 @@ export function Toolbar() {
                         </MorphingDialogContainer>
                     </MorphingDialog>
                 </motion.div>
+            )}
+            {/* [fork] log clear button */}
+            {activeItem === 'log' && (
+                <LogClearButton />
             )}
         </AnimatePresence>
     );
