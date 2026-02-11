@@ -141,16 +141,35 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		TotalAttempts:    len(attempts),
 	}
 
-	// [fork] populate apikey info
-	if m.APIKeyID > 0 {
-		if apiKey, err := op.APIKeyGet(m.APIKeyID, ctx); err == nil {
-			relayLog.APIKeyName = apiKey.Name
-			key := apiKey.APIKey
-			if len(key) >= 8 {
-				relayLog.APIKeyPreview = key[:4] + "...." + key[len(key)-4:]
-			} else {
-				relayLog.APIKeyPreview = key
+	// [fork] populate channel key info from the attempt that actually served the request
+	var usedKeyID int
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if attempts[i].ChannelKeyID > 0 {
+			usedKeyID = attempts[i].ChannelKeyID
+			break
+		}
+	}
+	if usedKeyID > 0 && channelID > 0 {
+		if ch, chErr := op.ChannelGet(channelID, ctx); chErr == nil {
+			for idx, k := range ch.Keys {
+				if k.ID == usedKeyID {
+					relayLog.ChannelKeyIndex = idx + 1
+					relayLog.ChannelKeyRemark = k.Remark
+					key := k.ChannelKey
+					if len(key) >= 8 {
+						relayLog.ChannelKeyPreview = key[:4] + "..." + key[len(key)-4:]
+					} else {
+						relayLog.ChannelKeyPreview = key
+					}
+					break
+				}
 			}
+		}
+	}
+	// [fork] populate user apikey name
+	if m.APIKeyID > 0 {
+		if apiKey, akErr := op.APIKeyGet(m.APIKeyID, ctx); akErr == nil {
+			relayLog.APIKeyName = apiKey.Name
 		}
 	}
 

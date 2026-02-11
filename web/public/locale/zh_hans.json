@@ -405,7 +405,8 @@
             "retryDetails": "重试详情",
             "attempts": "次尝试",
             "success": "成功",
-            "failed": "失败"
+            "failed": "失败",
+            "user": "用户"
         }
     },
     "channel": {

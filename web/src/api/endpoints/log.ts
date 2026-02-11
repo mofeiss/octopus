@@ -44,9 +44,11 @@ export interface RelayLog {
     error: string;               // 错误信息
     attempts?: ChannelAttempt[]; // 所有尝试记录
     total_attempts?: number;     // 总尝试次数
-    // [fork] apikey info
+    // [fork] channel key & user apikey info
     api_key_name?: string;
-    api_key_preview?: string;
+    channel_key_preview?: string;
+    channel_key_remark?: string;
+    channel_key_index?: number;
 }
 
 /**

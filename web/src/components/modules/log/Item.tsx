@@ -231,10 +231,16 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 <span className="text-muted-foreground truncate" title={log.actual_model_name}>
                                     {log.actual_model_name}
                                 </span>
-                                {/* [fork] apikey info */}
-                                {log.api_key_preview && (
-                                    <span className="text-muted-foreground/70 truncate text-xs ml-1" title={`${log.api_key_preview}(${log.api_key_name || ''})`}>
-                                        {log.api_key_preview}{log.api_key_name ? `(${log.api_key_name})` : ''}
+                                {/* [fork] channel key info */}
+                                {log.channel_key_preview && (
+                                    <span className="text-muted-foreground/70 truncate text-xs" title={`[${log.channel_key_index}]${log.channel_key_preview}${log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}`}>
+                                        [{log.channel_key_index}]{log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
+                                    </span>
+                                )}
+                                {/* [fork] user apikey name */}
+                                {log.api_key_name && (
+                                    <span className="text-muted-foreground/60 text-xs ml-auto shrink-0">
+                                        {t('user')}:{log.api_key_name}
                                     </span>
                                 )}
                                 {log.attempts?.some(a => a.sticky) && (
@@ -301,10 +307,16 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 </Badge>
                             )}
                             <span className="text-muted-foreground">{log.actual_model_name}</span>
-                            {/* [fork] apikey info */}
-                            {log.api_key_preview && (
-                                <span className="text-muted-foreground/70 text-xs ml-1">
-                                    {log.api_key_preview}{log.api_key_name ? `(${log.api_key_name})` : ''}
+                            {/* [fork] channel key info */}
+                            {log.channel_key_preview && (
+                                <span className="text-muted-foreground/70 text-xs">
+                                    [{log.channel_key_index}]{log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
+                                </span>
+                            )}
+                            {/* [fork] user apikey name */}
+                            {log.api_key_name && (
+                                <span className="text-muted-foreground/60 text-xs ml-auto shrink-0">
+                                    {t('user')}:{log.api_key_name}
                                 </span>
                             )}
                             {log.attempts?.some(a => a.sticky) && (

@@ -405,7 +405,8 @@
             "retryDetails": "Retry Details",
             "attempts": "attempts",
             "success": "Success",
-            "failed": "Failed"
+            "failed": "Failed",
+            "user": "User"
         }
     },
     "channel": {
