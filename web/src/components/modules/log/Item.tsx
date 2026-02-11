@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User } from 'lucide-react';
+import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
 import JsonView from '@uiw/react-json-view';
@@ -237,9 +237,10 @@ export function LogCard({ log }: { log: RelayLog }) {
                                         <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />
                                         <Badge
                                             variant="secondary"
-                                            className="shrink-0 text-xs px-1.5 py-0"
+                                            className="shrink-0 text-xs px-1.5 py-0 inline-flex items-center gap-0.5"
                                             style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                         >
+                                            <KeyRound className="size-3" />
                                             {log.channel_key_index}
                                         </Badge>
                                         {log.channel_key_remark && (
@@ -329,9 +330,10 @@ export function LogCard({ log }: { log: RelayLog }) {
                                     <ArrowRight className="size-3.5 text-muted-foreground/50" />
                                     <Badge
                                         variant="secondary"
-                                        className="shrink-0 text-xs px-1.5 py-0"
+                                        className="shrink-0 text-xs px-1.5 py-0 inline-flex items-center gap-0.5"
                                         style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                     >
+                                        <KeyRound className="size-3" />
                                         {log.channel_key_index}
                                     </Badge>
                                     {log.channel_key_remark && (
@@ -448,9 +450,10 @@ export function LogCard({ log }: { log: RelayLog }) {
                                                                                 <>
                                                                                     <Badge
                                                                                         variant="secondary"
-                                                                                        className="shrink-0 text-[10px] px-1 py-0"
+                                                                                        className="shrink-0 text-[10px] px-1 py-0 inline-flex items-center gap-0.5"
                                                                                         style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                                                                                     >
+                                                                                        <KeyRound className="size-2.5" />
                                                                                         {attempt.channel_key_index}
                                                                                     </Badge>
                                                                                     {attempt.channel_key_remark && (
