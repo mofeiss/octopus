@@ -3,7 +3,8 @@ import { persist } from 'zustand/middleware'
 
 export type NavItem = 'home' | 'channel' | 'group' | 'model' | 'log' | 'setting'
 
-const NAV_ORDER: NavItem[] = ['home', 'channel', 'group', 'model', 'log', 'setting']
+// [fork] removed 'model' from NAV_ORDER to hide price page from navigation
+const NAV_ORDER: NavItem[] = ['home', 'channel', 'group', 'log', 'setting']
 
 interface NavState {
     activeItem: NavItem
