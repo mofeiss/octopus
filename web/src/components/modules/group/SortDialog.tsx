@@ -81,7 +81,7 @@ export function SortDialogContent() {
 
     const [sortedGroups, setSortedGroups] = useState<Group[]>(() => {
         if (!groups) return [];
-        return [...groups].sort((a, b) => (a.sort_order ?? a.id!) - (b.sort_order ?? b.id!));
+        return [...groups].sort((a, b) => (a.sort_order || a.id!) - (b.sort_order || b.id!));
     });
 
     const handleDragEnd = useCallback((result: DropResult) => {

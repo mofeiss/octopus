@@ -28,7 +28,7 @@ export function Group() {
 
     const filteredGroups = useMemo(() => {
         if (!groups) return [];
-        const sorted = [...groups].sort((a, b) => (a.sort_order ?? a.id!) - (b.sort_order ?? b.id!)); // [fork] sort by sort_order
+        const sorted = [...groups].sort((a, b) => (a.sort_order || a.id!) - (b.sort_order || b.id!)); // [fork] sort by sort_order
         if (!searchTerm.trim()) return sorted;
         const term = searchTerm.toLowerCase();
         return sorted.filter((g) => g.name.toLowerCase().includes(term));
