@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
@@ -26,6 +27,10 @@ func GroupListModel(ctx context.Context) ([]string, error) {
 	models := []string{}
 	for _, group := range groupCache.GetAll() {
 		models = append(models, group.Name)
+		// [fork] include route aliases in model list
+		for _, alias := range parseRouteAliases(group.RouteAliases) {
+			models = append(models, alias)
+		}
 	}
 	return models, nil
 }
@@ -51,7 +56,7 @@ func GroupCreate(group *model.Group, ctx context.Context) error {
 		return err
 	}
 	groupCache.Set(group.ID, *group)
-	groupMap.Set(group.Name, *group)
+	groupMapSetWithAliases(*group) // [fork]
 	return nil
 }
 
@@ -91,6 +96,11 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	if req.SessionKeepTime != nil {
 		selectFields = append(selectFields, "session_keep_time")
 		updates.SessionKeepTime = *req.SessionKeepTime
+	}
+	// [fork] route aliases
+	if req.RouteAliases != nil {
+		selectFields = append(selectFields, "route_aliases")
+		updates.RouteAliases = *req.RouteAliases
 	}
 
 	if len(selectFields) > 0 {
@@ -163,6 +173,7 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 	if oldName != "" && oldName != group.Name {
 		groupMap.Del(oldName)
 	}
+	groupMapDelAliases(oldGroup.RouteAliases) // [fork] clean up old alias entries
 	return &group, nil
 }
 
@@ -195,6 +206,7 @@ func GroupDel(id int, ctx context.Context) error {
 
 	groupCache.Del(id)
 	groupMap.Del(group.Name)
+	groupMapDelAliases(group.RouteAliases) // [fork]
 	return nil
 }
 
@@ -348,7 +360,7 @@ func groupRefreshCache(ctx context.Context) error {
 	}
 	for _, group := range groups {
 		groupCache.Set(group.ID, group)
-		groupMap.Set(group.Name, group)
+		groupMapSetWithAliases(group) // [fork]
 	}
 	return nil
 }
@@ -361,7 +373,7 @@ func groupRefreshCacheByID(id int, ctx context.Context) error {
 		return err
 	}
 	groupCache.Set(group.ID, group)
-	groupMap.Set(group.Name, group)
+	groupMapSetWithAliases(group) // [fork]
 	return nil
 }
 
@@ -378,7 +390,38 @@ func groupRefreshCacheByIDs(ids []int, ctx context.Context) error {
 	}
 	for _, group := range groups {
 		groupCache.Set(group.ID, group)
-		groupMap.Set(group.Name, group)
+		groupMapSetWithAliases(group) // [fork]
 	}
 	return nil
+}
+
+// [fork] parseRouteAliases splits the comma-separated alias string into trimmed, non-empty names.
+func parseRouteAliases(aliases string) []string {
+	if aliases == "" {
+		return nil
+	}
+	parts := strings.Split(aliases, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// [fork] groupMapSetWithAliases sets groupMap entries for both group.Name and all RouteAliases.
+func groupMapSetWithAliases(group model.Group) {
+	groupMap.Set(group.Name, group)
+	for _, alias := range parseRouteAliases(group.RouteAliases) {
+		groupMap.Set(alias, group)
+	}
+}
+
+// [fork] groupMapDelAliases removes groupMap entries for all RouteAliases.
+func groupMapDelAliases(aliases string) {
+	for _, alias := range parseRouteAliases(aliases) {
+		groupMap.Del(alias)
+	}
 }

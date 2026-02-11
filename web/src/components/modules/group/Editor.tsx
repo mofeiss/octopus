@@ -26,6 +26,7 @@ export type GroupEditorValues = {
     mode: GroupMode;
     first_token_time_out: number;
     session_keep_time: number;
+    route_aliases: string; // [fork]
     members: SelectedMember[];
 };
 
@@ -234,6 +235,7 @@ export function GroupEditor({
     const [mode, setMode] = useState<GroupMode>((initial?.mode ?? 1) as GroupMode);
     const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
     const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
+    const [routeAliases, setRouteAliases] = useState(initial?.route_aliases ?? ''); // [fork]
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -317,6 +319,7 @@ export function GroupEditor({
             mode,
             first_token_time_out: firstTokenTimeOut,
             session_keep_time: sessionKeepTime,
+            route_aliases: routeAliases.trim(), // [fork]
             members: selectedMembers,
         });
     };
@@ -420,6 +423,30 @@ export function GroupEditor({
                             />
                         </Field>
                     </div>
+
+                    {/* [fork] Route Aliases */}
+                    <Field>
+                        <FieldLabel htmlFor="group-route-aliases">
+                            {t('form.routeAliases')}
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        {t('form.routeAliasesHint')}
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
+                        </FieldLabel>
+                        <Input
+                            id="group-route-aliases"
+                            value={routeAliases}
+                            onChange={(e) => setRouteAliases(e.target.value)}
+                            className="rounded-xl"
+                            placeholder={t('form.routeAliasesPlaceholder')}
+                        />
+                    </Field>
 
                     {/* Mode */}
                     <div className="flex gap-1">
