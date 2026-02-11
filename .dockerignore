@@ -1,0 +1,11 @@
+build/
+data/
+.git/
+.vscode/
+.omc/
+web/node_modules/
+web/out/
+web/.next/
+static/out/
+*.md
+!web/public/**/*.md
