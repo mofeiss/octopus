@@ -305,7 +305,9 @@
             "updated": "更新成功",
             "updateFailed": "更新失敗",
             "deleted": "刪除成功",
-            "autoAddFailed": "自動新增失敗"
+            "autoAddFailed": "自動新增失敗",
+            "itemEnabled": "已啟用",
+            "itemDisabled": "已停用"
         },
         "create": {
             "title": "建立分組",
@@ -433,7 +435,8 @@
             "editRemarkSave": "儲存",
             "deleteRemarkConfirm": "確認清除備註？",
             "confirm": "確認",
-            "cancel": "取消"
+            "cancel": "取消",
+            "info": "供應源詳情"
         },
         "detail": {
             "title": {

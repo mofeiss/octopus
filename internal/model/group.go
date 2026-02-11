@@ -28,6 +28,7 @@ type GroupItem struct {
 	ModelName string `json:"model_name" gorm:"not null;index:idx_group_channel_model,unique"`
 	Priority  int    `json:"priority"`
 	Weight    int    `json:"weight"`
+	Enabled   bool   `json:"enabled" gorm:"default:true"` // [fork] item 级启用开关
 }
 
 // GroupUpdateRequest 分组更新请求 - 仅包含变更的数据

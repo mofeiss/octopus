@@ -402,6 +402,18 @@ func groupRefreshCacheByIDs(ids []int, ctx context.Context) error {
 	return nil
 }
 
+// [fork] GroupItemEnabled 启用/禁用分组 item
+func GroupItemEnabled(id int, enabled bool, ctx context.Context) error {
+	var item model.GroupItem
+	if err := db.GetDB().WithContext(ctx).First(&item, id).Error; err != nil {
+		return fmt.Errorf("group item not found")
+	}
+	if err := db.GetDB().WithContext(ctx).Model(&model.GroupItem{}).Where("id = ?", id).Update("enabled", enabled).Error; err != nil {
+		return err
+	}
+	return groupRefreshCacheByID(item.GroupID, ctx)
+}
+
 // [fork] parseRouteAliases splits the comma-separated alias string into trimmed, non-empty names.
 func parseRouteAliases(aliases string) []string {
 	if aliases == "" {

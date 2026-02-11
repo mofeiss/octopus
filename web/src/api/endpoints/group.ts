@@ -12,6 +12,7 @@ export interface GroupItem {
     model_name: string;
     priority: number;
     weight: number;
+    enabled?: boolean; // [fork] item 级启用开关
 }
 
 /**
@@ -194,6 +195,20 @@ export function useReorderGroups() {
     return useMutation({
         mutationFn: async (data: GroupReorderRequest) => {
             return apiClient.post<null>('/api/v1/group/reorder', data);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+        },
+    });
+}
+
+// [fork] 分组 item 启用/禁用 Hook
+export function useEnableGroupItem() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: { id: number; enabled: boolean }) => {
+            return apiClient.post<null>('/api/v1/group/item/enable', data);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });

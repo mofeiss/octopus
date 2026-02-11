@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Trash2, X, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { type Group, useDeleteGroup, useUpdateGroup } from '@/api/endpoints/group';
+import { type Group, useDeleteGroup, useUpdateGroup, useEnableGroupItem } from '@/api/endpoints/group';
 import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -73,6 +73,7 @@ export function GroupCard({ group }: { group: Group }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const deleteGroup = useDeleteGroup();
+    const enableGroupItem = useEnableGroupItem(); // [fork]
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -96,7 +97,8 @@ export function GroupCard({ group }: { group: Group }) {
             .map((item) => ({
                 id: modelChannelKey(item.channel_id, item.model_name),
                 name: item.model_name,
-                enabled: enabledByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? true,
+                enabled: (enabledByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? true) && (item.enabled !== false), // [fork] 组合渠道级 + item级
+                item_enabled: item.enabled !== false, // [fork] item 级原始状态
                 channel_id: item.channel_id,
                 channel_name: channelNameByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? `Channel ${item.channel_id}`,
                 item_id: item.id,
@@ -170,6 +172,19 @@ export function GroupCard({ group }: { group: Group }) {
             );
         }, 500);
     }, [group.id, priorityByItemId, updateGroup, onSuccess, onError]);
+
+    // [fork] item 级启用/禁用
+    const handleToggleItemEnabled = useCallback((id: string, enabled: boolean) => {
+        const member = membersRef.current.find((m) => m.id === id);
+        if (member?.item_id === undefined) return;
+        enableGroupItem.mutate(
+            { id: member.item_id, enabled },
+            {
+                onSuccess: () => toast.success(t(enabled ? 'toast.itemEnabled' : 'toast.itemDisabled')),
+                onError,
+            }
+        );
+    }, [enableGroupItem, t, onError]);
 
     const handleSubmitEdit = useCallback((values: GroupEditorValues, onDone?: () => void) => {
         if (!group.id) return;
@@ -346,6 +361,7 @@ export function GroupCard({ group }: { group: Group }) {
                     onReorder={setMembers}
                     onRemove={handleRemoveMember}
                     onWeightChange={handleWeightChange}
+                    onToggleEnabled={handleToggleItemEnabled}
                     onDragStart={handleDragStart}
                     onDrop={handleDropReorder}
                     onDragFinish={handleDragFinish}

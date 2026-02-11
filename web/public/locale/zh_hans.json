@@ -305,7 +305,9 @@
             "updated": "更新成功",
             "updateFailed": "更新失败",
             "deleted": "删除成功",
-            "autoAddFailed": "自动添加失败"
+            "autoAddFailed": "自动添加失败",
+            "itemEnabled": "已启用",
+            "itemDisabled": "已禁用"
         },
         "create": {
             "title": "创建分组",
@@ -433,7 +435,8 @@
             "editRemarkSave": "保存",
             "deleteRemarkConfirm": "确认清除备注？",
             "confirm": "确认",
-            "cancel": "取消"
+            "cancel": "取消",
+            "info": "渠道详情"
         },
         "detail": {
             "title": {

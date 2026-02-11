@@ -82,6 +82,12 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 
 		item := iter.Item()
 
+		// [fork] GroupItem 级启用检查
+		if !item.Enabled {
+			iter.Skip(item.ChannelID, 0, fmt.Sprintf("channel_%d", item.ChannelID), "group item disabled")
+			continue
+		}
+
 		// 获取通道
 		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
 		if err != nil {

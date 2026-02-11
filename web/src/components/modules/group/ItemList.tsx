@@ -20,6 +20,7 @@ export interface SelectedMember extends LLMChannel {
     id: string;
     item_id?: number;
     weight?: number;
+    item_enabled?: boolean; // [fork] GroupItem 级启用状态
 }
 
 function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
@@ -40,6 +41,7 @@ function MemberItem({
     member,
     onRemove,
     onWeightChange,
+    onToggleEnabled,
     isRemoving,
     index,
     showWeight = false,
@@ -50,6 +52,7 @@ function MemberItem({
     member: SelectedMember;
     onRemove: (id: string) => void;
     onWeightChange?: (id: string, weight: number) => void;
+    onToggleEnabled?: (id: string, enabled: boolean) => void;
     isRemoving?: boolean;
     index: number;
     showWeight?: boolean;
@@ -83,12 +86,22 @@ function MemberItem({
                 isRemoving && 'opacity-0',
                 isDisabled && 'opacity-60 grayscale'
             )}>
-                <span className={cn(
-                    'size-5 rounded-md text-xs font-bold grid place-items-center shrink-0',
-                    isDisabled ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
-                )}>
+                {/* [fork] 序号 tag 兼做 item 级启用/禁用开关 */}
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleEnabled?.(member.id, !(member.item_enabled ?? true));
+                    }}
+                    disabled={!onToggleEnabled}
+                    className={cn(
+                        'size-5 rounded-md text-xs font-bold grid place-items-center shrink-0 transition-all',
+                        onToggleEnabled && 'cursor-pointer hover:ring-1 hover:ring-primary/50',
+                        isDisabled ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'
+                    )}
+                >
                     {index + 1}
-                </span>
+                </button>
 
                 <div
                     className={cn(
@@ -182,6 +195,7 @@ export interface MemberListProps {
     onReorder: (members: SelectedMember[]) => void;
     onRemove: (id: string) => void;
     onWeightChange?: (id: string, weight: number) => void;
+    onToggleEnabled?: (id: string, enabled: boolean) => void; // [fork]
     /**
      * When true, auto-scroll the list to bottom when a *new visible* member appears
      * (i.e. a new member id is added). Useful in "editor" flows. Defaults to true.
@@ -214,6 +228,7 @@ export function MemberList({
     onReorder,
     onRemove,
     onWeightChange,
+    onToggleEnabled,
     autoScrollOnAdd = true,
     onDragStart,
     onDrop,
@@ -320,6 +335,7 @@ export function MemberList({
                                                 member={member}
                                                 onRemove={onRemove}
                                                 onWeightChange={onWeightChange}
+                                                onToggleEnabled={onToggleEnabled}
                                                 isRemoving={removingIds.has(member.id)}
                                                 index={index}
                                                 showWeight={showWeight}

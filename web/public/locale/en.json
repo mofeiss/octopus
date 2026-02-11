@@ -305,7 +305,9 @@
             "updated": "Updated successfully",
             "updateFailed": "Update failed",
             "deleted": "Deleted successfully",
-            "autoAddFailed": "Auto add failed"
+            "autoAddFailed": "Auto add failed",
+            "itemEnabled": "Enabled",
+            "itemDisabled": "Disabled"
         },
         "create": {
             "title": "Create Group",
@@ -433,7 +435,8 @@
             "editRemarkSave": "Save",
             "deleteRemarkConfirm": "Clear this remark?",
             "confirm": "Confirm",
-            "cancel": "Cancel"
+            "cancel": "Cancel",
+            "info": "Channel Info"
         },
         "detail": {
             "title": {

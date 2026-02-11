@@ -37,6 +37,11 @@ func init() {
 		AddRoute(
 			router.NewRoute("/reorder", http.MethodPost).
 				Handle(reorderGroup),
+		).
+		// [fork] 分组 item 启用/禁用
+		AddRoute(
+			router.NewRoute("/item/enable", http.MethodPost).
+				Handle(enableGroupItem),
 		)
 	// AddRoute(
 	// 	router.NewRoute("/auto-add-item", http.MethodPost).
@@ -116,6 +121,23 @@ func reorderGroup(c *gin.Context) {
 		return
 	}
 	if err := op.GroupReorder(&req, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
+}
+
+// [fork] 分组 item 启用/禁用
+func enableGroupItem(c *gin.Context) {
+	var request struct {
+		ID      int  `json:"id"`
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.GroupItemEnabled(request.ID, request.Enabled, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
