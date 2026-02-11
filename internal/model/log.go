@@ -40,4 +40,7 @@ type RelayLog struct {
 	Error            string           `json:"error"`                                    // 错误信息
 	Attempts         []ChannelAttempt `json:"attempts" gorm:"serializer:json"`          // 所有尝试记录
 	TotalAttempts    int              `json:"total_attempts"`                           // 总尝试次数
+	// [fork] apikey info for log display
+	APIKeyName    string `json:"api_key_name" gorm:"default:''"`
+	APIKeyPreview string `json:"api_key_preview" gorm:"default:''"`
 }

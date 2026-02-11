@@ -141,6 +141,19 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		TotalAttempts:    len(attempts),
 	}
 
+	// [fork] populate apikey info
+	if m.APIKeyID > 0 {
+		if apiKey, err := op.APIKeyGet(m.APIKeyID, ctx); err == nil {
+			relayLog.APIKeyName = apiKey.Name
+			key := apiKey.APIKey
+			if len(key) >= 8 {
+				relayLog.APIKeyPreview = key[:4] + "...." + key[len(key)-4:]
+			} else {
+				relayLog.APIKeyPreview = key
+			}
+		}
+	}
+
 	// 首字时间
 	if !m.FirstTokenTime.IsZero() {
 		relayLog.Ftut = int(m.FirstTokenTime.Sub(m.StartTime).Milliseconds())
