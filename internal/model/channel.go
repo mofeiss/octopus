@@ -1,6 +1,7 @@
 package model
 
 import (
+	"sort"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
@@ -152,4 +153,36 @@ func (c *Channel) GetChannelKey() ChannelKey {
 		return ChannelKey{}
 	}
 	return best
+}
+
+// [fork] GetChannelKeys 返回该渠道所有可用 key，按 TotalCost 升序、LastUseTimeStamp 升序排列。
+// 用于 relay 内层 key 循环，使多 key 渠道的负载均匀分散。
+func (c *Channel) GetChannelKeys() []ChannelKey {
+	if c == nil || len(c.Keys) == 0 {
+		return nil
+	}
+
+	nowSec := time.Now().Unix()
+
+	result := make([]ChannelKey, 0, len(c.Keys))
+	for _, k := range c.Keys {
+		if !k.Enabled || k.ChannelKey == "" {
+			continue
+		}
+		if k.StatusCode == 429 && k.LastUseTimeStamp > 0 {
+			if nowSec-k.LastUseTimeStamp < int64(5*time.Minute/time.Second) {
+				continue
+			}
+		}
+		result = append(result, k)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].TotalCost != result[j].TotalCost {
+			return result[i].TotalCost < result[j].TotalCost
+		}
+		return result[i].LastUseTimeStamp < result[j].LastUseTimeStamp
+	})
+
+	return result
 }
