@@ -193,7 +193,7 @@ export function LogCard({ log }: { log: RelayLog }) {
 
     const hasError = !!log.error;
     const hasMultipleAttempts = log.attempts && log.attempts.length > 1;
-    const [isDiagnosticExpanded, setIsDiagnosticExpanded] = useState(false);
+    const [isDiagnosticExpanded, setIsDiagnosticExpanded] = useState(true);
 
     return (
         <TooltipProvider>
