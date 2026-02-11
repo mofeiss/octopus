@@ -4,5 +4,6 @@ static/out/*
 !static/out/README.md
 .vscode
 .omc/*
+web/.omc/*
 CLAUDE.md
 .claude/*
