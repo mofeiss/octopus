@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin } from 'lucide-react';
+import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
 import JsonView from '@uiw/react-json-view';
@@ -233,21 +233,22 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 </span>
                                 {/* [fork] channel key info */}
                                 {log.channel_key_preview && (
-                                    <span className="text-muted-foreground/70 truncate text-xs" title={`[${log.channel_key_index}]${log.channel_key_preview}${log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}`}>
-                                        [{log.channel_key_index}]{log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
-                                    </span>
-                                )}
-                                {/* [fork] user apikey name */}
-                                {log.api_key_name && (
-                                    <span className="text-muted-foreground/60 text-xs ml-auto shrink-0">
-                                        {t('user')}:{log.api_key_name}
-                                    </span>
+                                    <>
+                                        <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+                                        <Badge
+                                            variant="secondary"
+                                            className="shrink-0 text-xs px-1.5 py-0"
+                                            title={`[${log.channel_key_index}] ${log.channel_key_preview}${log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}`}
+                                        >
+                                            [{log.channel_key_index}] {log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
+                                        </Badge>
+                                    </>
                                 )}
                                 {log.attempts?.some(a => a.sticky) && (
                                     <Pin className="size-3.5 shrink-0 text-amber-500" />
                                 )}
                             </div>
-                            <div className="grid grid-cols-2 md:grid-cols-6 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
+                            <div className="grid grid-cols-2 md:grid-cols-7 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground">
                                 <div className="flex items-center gap-1.5">
                                     <Clock className="size-3.5 shrink-0" style={{ color: brandColor }} />
                                     <span>{formatTime(log.time)}</span>
@@ -274,6 +275,13 @@ export function LogCard({ log }: { log: RelayLog }) {
                                         {t('cost')} {Number(log.cost).toFixed(6)}
                                     </span>
                                 </div>
+                                {/* [fork] user apikey name */}
+                                {log.api_key_name && (
+                                    <div className="flex items-center gap-1.5">
+                                        <User className="size-3.5 shrink-0 text-sky-500" />
+                                        <span>{t('user')} {log.api_key_name}</span>
+                                    </div>
+                                )}
                             </div>
                             {hasError && (
                                 <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 overflow-hidden">
@@ -309,15 +317,16 @@ export function LogCard({ log }: { log: RelayLog }) {
                             <span className="text-muted-foreground">{log.actual_model_name}</span>
                             {/* [fork] channel key info */}
                             {log.channel_key_preview && (
-                                <span className="text-muted-foreground/70 text-xs">
-                                    [{log.channel_key_index}]{log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
-                                </span>
-                            )}
-                            {/* [fork] user apikey name */}
-                            {log.api_key_name && (
-                                <span className="text-muted-foreground/60 text-xs ml-auto shrink-0">
-                                    {t('user')}:{log.api_key_name}
-                                </span>
+                                <>
+                                    <ArrowRight className="size-3.5 text-muted-foreground/50" />
+                                    <Badge
+                                        variant="secondary"
+                                        className="shrink-0 text-xs px-1.5 py-0"
+                                        title={`[${log.channel_key_index}] ${log.channel_key_preview}${log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}`}
+                                    >
+                                        [{log.channel_key_index}] {log.channel_key_preview}{log.channel_key_remark ? ` (${log.channel_key_remark})` : ''}
+                                    </Badge>
+                                </>
                             )}
                             {log.attempts?.some(a => a.sticky) && (
                                 <Pin className="size-3.5 shrink-0 text-amber-500" />
