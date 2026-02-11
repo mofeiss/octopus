@@ -69,9 +69,8 @@ func UserGet() model.User {
 }
 
 // [fork] refresh user cache after import
+// Silently skips if no user exists (first startup — UserInit will create one)
 func userRefreshCache() error {
-	if err := db.GetDB().First(&userCache).Error; err != nil {
-		return fmt.Errorf("user refresh cache error: %w", err)
-	}
+	db.GetDB().First(&userCache)
 	return nil
 }
