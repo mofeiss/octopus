@@ -241,7 +241,7 @@ export function GroupCard({ group }: { group: Group }) {
     }, [group.first_token_time_out, group.session_keep_time, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
 
     return (
-        <article className="flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
+        <article className="flex flex-col h-full rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
             <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
                 <div className="relative flex-1 mr-2 min-w-0 group/title">
                     <Tooltip side="top" sideOffset={10} align="center">
@@ -337,7 +337,7 @@ export function GroupCard({ group }: { group: Group }) {
                 ))}
             </div>
 
-            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative h-101">
+            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative flex-1 min-h-20">
                 <MemberList
                     members={members}
                     onReorder={setMembers}
