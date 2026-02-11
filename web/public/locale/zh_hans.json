@@ -350,7 +350,14 @@
             "failover": "故障转移",
             "weighted": "加权分配"
         },
-        "empty": "暂无分组，点击左上角按钮创建"
+        "empty": "暂无分组，点击左上角按钮创建",
+        "sort": {
+            "title": "分组排序",
+            "save": "保存",
+            "cancel": "取消",
+            "saved": "排序已保存",
+            "saveFailed": "排序保存失败"
+        }
     },
     "model": {
         "create": {

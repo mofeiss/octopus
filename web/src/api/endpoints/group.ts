@@ -35,6 +35,7 @@ export interface Group {
     first_token_time_out?: number;
     session_keep_time?: number;
     route_aliases?: string;  // [fork] 逗号分隔的路由别名
+    sort_order?: number;     // [fork] 分组排序
     items?: GroupItem[];
 }
 
@@ -177,6 +178,25 @@ export function useDeleteGroup() {
         },
         onError: (error) => {
             logger.error('分组删除失败:', error);
+        },
+    });
+}
+
+// [fork] 分组排序请求
+export interface GroupReorderRequest {
+    orders: { id: number; sort_order: number }[];
+}
+
+// [fork] 分组排序 Hook
+export function useReorderGroups() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: GroupReorderRequest) => {
+            return apiClient.post<null>('/api/v1/group/reorder', data);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
         },
     });
 }

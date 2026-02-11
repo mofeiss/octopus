@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, X, Trash2 } from 'lucide-react'; // [fork] added Trash2
+import { ChevronLeft, ChevronRight, Plus, Search, X, Trash2, ArrowUpDown } from 'lucide-react'; // [fork] added Trash2, ArrowUpDown
 import { motion, AnimatePresence } from 'motion/react';
 import {
     MorphingDialog,
@@ -13,6 +13,7 @@ import { Button, buttonVariants } from '@/components/ui/button'; // [fork] added
 import { useNavStore, type NavItem } from '@/components/modules/navbar';
 import { CreateDialogContent as ChannelCreateContent } from '@/components/modules/channel/Create';
 import { CreateDialogContent as GroupCreateContent } from '@/components/modules/group/Create';
+import { SortDialogContent } from '@/components/modules/group/SortDialog'; // [fork]
 // [fork] hide model/price page
 // import { CreateDialogContent as ModelCreateContent } from '@/components/modules/model/Create';
 import { useSearchStore } from './search-store';
@@ -178,6 +179,21 @@ export function Toolbar() {
                             <ChevronRight className="size-4" />
                         </button>
                     </div>
+
+                    {/* [fork] 分组排序按钮 */}
+                    {activeItem === 'group' && (
+                        <MorphingDialog>
+                            <MorphingDialogTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground" })}>
+                                <ArrowUpDown className="size-4 transition-colors duration-300" />
+                            </MorphingDialogTrigger>
+
+                            <MorphingDialogContainer>
+                                <MorphingDialogContent className="w-full max-w-sm bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+                                    <SortDialogContent />
+                                </MorphingDialogContent>
+                            </MorphingDialogContainer>
+                        </MorphingDialog>
+                    )}
 
                     {/* 创建按钮 */}
                     <MorphingDialog>

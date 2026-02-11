@@ -17,6 +17,7 @@ type Group struct {
 	FirstTokenTimeOut int         `json:"first_token_time_out"` // 单个渠道首个Token响应超时时间(秒)
 	SessionKeepTime   int         `json:"session_keep_time"`    // 会话保持时间(秒) 0 为禁用
 	RouteAliases      string      `json:"route_aliases"`        // [fork] 逗号分隔的路由别名
+	SortOrder         int         `json:"sort_order"`           // [fork] 分组排序字段
 	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
 
@@ -60,4 +61,14 @@ type GroupItemUpdateRequest struct {
 type GroupIDAndLLMName struct {
 	ChannelID int
 	ModelName string
+}
+
+// [fork] 分组排序请求
+type GroupReorderRequest struct {
+	Orders []GroupOrderItem `json:"orders" binding:"required"`
+}
+
+type GroupOrderItem struct {
+	ID        int `json:"id" binding:"required"`
+	SortOrder int `json:"sort_order"`
 }

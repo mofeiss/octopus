@@ -350,7 +350,14 @@
             "failover": "Failover",
             "weighted": "Weighted"
         },
-        "empty": "No groups yet, click the button above to create one"
+        "empty": "No groups yet, click the button above to create one",
+        "sort": {
+            "title": "Sort Groups",
+            "save": "Save",
+            "cancel": "Cancel",
+            "saved": "Sort order saved",
+            "saveFailed": "Failed to save sort order"
+        }
     },
     "model": {
         "create": {

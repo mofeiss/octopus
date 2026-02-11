@@ -55,6 +55,11 @@ func GroupCreate(group *model.Group, ctx context.Context) error {
 	if err := db.GetDB().WithContext(ctx).Create(group).Error; err != nil {
 		return err
 	}
+	// [fork] 新建分组时自动设置 sort_order = id，确保排在末尾
+	if group.SortOrder == 0 {
+		group.SortOrder = group.ID
+		db.GetDB().WithContext(ctx).Model(group).Update("sort_order", group.SortOrder)
+	}
 	groupCache.Set(group.ID, *group)
 	groupMapSetWithAliases(*group) // [fork]
 	return nil
@@ -424,4 +429,29 @@ func groupMapDelAliases(aliases string) {
 	for _, alias := range parseRouteAliases(aliases) {
 		groupMap.Del(alias)
 	}
+}
+
+// [fork] GroupReorder 批量更新分组排序
+func GroupReorder(req *model.GroupReorderRequest, ctx context.Context) error {
+	if len(req.Orders) == 0 {
+		return nil
+	}
+
+	ids := make([]int, len(req.Orders))
+	sortOrderCase := "CASE id"
+	for i, item := range req.Orders {
+		ids[i] = item.ID
+		sortOrderCase += fmt.Sprintf(" WHEN %d THEN %d", item.ID, item.SortOrder)
+	}
+	sortOrderCase += " END"
+
+	if err := db.GetDB().WithContext(ctx).
+		Model(&model.Group{}).
+		Where("id IN ?", ids).
+		Update("sort_order", gorm.Expr(sortOrderCase)).Error; err != nil {
+		return fmt.Errorf("failed to reorder groups: %w", err)
+	}
+
+	// 刷新缓存
+	return groupRefreshCacheByIDs(ids, ctx)
 }

@@ -32,6 +32,11 @@ func init() {
 		AddRoute(
 			router.NewRoute("/delete/:id", http.MethodDelete).
 				Handle(deleteGroup),
+		).
+		// [fork] 分组排序
+		AddRoute(
+			router.NewRoute("/reorder", http.MethodPost).
+				Handle(reorderGroup),
 		)
 	// AddRoute(
 	// 	router.NewRoute("/auto-add-item", http.MethodPost).
@@ -101,6 +106,20 @@ func deleteGroup(c *gin.Context) {
 		return
 	}
 	resp.Success(c, "group deleted successfully")
+}
+
+// [fork] 分组排序
+func reorderGroup(c *gin.Context) {
+	var req model.GroupReorderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := op.GroupReorder(&req, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
 }
 
 // func autoAddGroupItem(c *gin.Context) {
