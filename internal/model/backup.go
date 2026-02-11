@@ -26,6 +26,9 @@ type DBDump struct {
 	StatsAPIKey  []StatsAPIKey  `json:"stats_api_key,omitempty"`
 
 	RelayLogs []RelayLog `json:"relay_logs,omitempty"`
+
+	// [fork] include admin user in backup
+	Users []User `json:"users,omitempty"`
 }
 
 type DBImportResult struct {

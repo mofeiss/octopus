@@ -66,6 +66,11 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 		}
 	}
 
+	// [fork] export users
+	if err := conn.Find(&d.Users).Error; err != nil {
+		return nil, fmt.Errorf("export users: %w", err)
+	}
+
 	if includeLogs {
 		if err := conn.Find(&d.RelayLogs).Error; err != nil {
 			return nil, fmt.Errorf("export relay_logs: %w", err)
@@ -123,6 +128,13 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			return fmt.Errorf("import settings: %w", err)
 		} else {
 			res.RowsAffected["settings"] = n
+		}
+
+		// [fork] import users
+		if n, err := createUpsertAll(tx, dump.Users, []clause.Column{{Name: "id"}}); err != nil {
+			return fmt.Errorf("import users: %w", err)
+		} else {
+			res.RowsAffected["users"] = n
 		}
 
 		if dump.IncludeStats {

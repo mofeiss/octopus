@@ -67,3 +67,11 @@ func UserVerify(username, password string) error {
 func UserGet() model.User {
 	return userCache
 }
+
+// [fork] refresh user cache after import
+func userRefreshCache() error {
+	if err := db.GetDB().First(&userCache).Error; err != nil {
+		return fmt.Errorf("user refresh cache error: %w", err)
+	}
+	return nil
+}
