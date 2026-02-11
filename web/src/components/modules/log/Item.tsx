@@ -58,8 +58,8 @@ function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadge
                     className="shrink-0 text-xs px-1.5 py-0 cursor-help"
                     style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                 >
-                    <RotateCw className="size-3 mr-1 opacity-80" />
-                    {attempts.length} {channelName}
+                    <RotateCw className="size-3 mr-0.5 opacity-80" />
+                    {attempts.length}<span className="ml-1.5">{channelName}</span>
                 </Badge>
             </TooltipTrigger>
             <TooltipContent className="border bg-card p-2 min-w-[280px] shadow-sm rounded-3xl flex flex-col gap-1">
