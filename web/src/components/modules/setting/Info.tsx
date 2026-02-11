@@ -20,7 +20,7 @@ export function SettingInfo() {
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
     const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
     // 最新版本与后端当前版本不一致 → 有新版本可更新
-    const hasNewVersion = latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
+    const hasNewVersion = latestVersion && backendNowVersion && backendNowVersion !== 'dev' && latestVersion !== backendNowVersion; // [fork] disable update for dev
 
     const clearCacheAndReload = async () => {
         // 通知 Service Worker 清理缓存
