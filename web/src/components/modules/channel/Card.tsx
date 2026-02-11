@@ -3,8 +3,9 @@ import {
     MorphingDialogTrigger,
     MorphingDialogContainer,
     MorphingDialogContent,
+    useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import { DollarSign, MessageSquare, Pencil, Trash2 } from 'lucide-react';
+import { DollarSign, Info, MessageSquare, Pencil, Trash2 } from 'lucide-react';
 import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
 import { type Channel, useEnableChannel, useUpdateChannel } from '@/api/endpoints/channel';
 import { CardContent } from './CardContent';
@@ -12,7 +13,7 @@ import { useTranslations } from 'next-intl';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/animate-ui/components/animate/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/common/Toast';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -27,6 +28,9 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
     const t = useTranslations('channel.card');
     const enableChannel = useEnableChannel();
     const updateChannel = useUpdateChannel();
+
+    // [fork] ref to control whether CardContent opens in editing or viewing mode
+    const defaultEditingRef = useRef(true);
 
     // [fork] remark edit/delete modal state
     const [editRemarkOpen, setEditRemarkOpen] = useState(false);
@@ -86,7 +90,7 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
         <>
             <MorphingDialog>
                 <MorphingDialogTrigger className="w-full">
-                    <article className="relative flex min-h-54 flex-col justify-between gap-5 rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow transition-all duration-300 hover:scale-[1.02]">
+                    <article onClickCapture={() => { defaultEditingRef.current = true; }} className="relative flex min-h-54 flex-col justify-between gap-5 rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow transition-all duration-300 hover:scale-[1.02]">
                         <header className="relative flex items-center justify-between gap-2">
                             <Tooltip side="top" sideOffset={10} align="center">
                                 <TooltipTrigger asChild>
@@ -94,12 +98,15 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
                                 </TooltipTrigger>
                                 <TooltipContent key={channel.name}>{channel.name}</TooltipContent>
                             </Tooltip>
-                            <Switch
-                                checked={channel.enabled}
-                                onCheckedChange={handleEnableChange}
-                                disabled={enableChannel.isPending}
-                                onClick={(e) => e.stopPropagation()}
-                            />
+                            <div className="flex items-center gap-1 shrink-0">
+                                <InfoButton onClick={() => { defaultEditingRef.current = false; }} />
+                                <Switch
+                                    checked={channel.enabled}
+                                    onCheckedChange={handleEnableChange}
+                                    disabled={enableChannel.isPending}
+                                    onClick={(e) => e.stopPropagation()}
+                                />
+                            </div>
                         </header>
 
                         {/* [fork] remark display row */}
@@ -157,7 +164,7 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
 
                 <MorphingDialogContainer>
                     <MorphingDialogContent className="w-full md:max-w-xl bg-card text-card-foreground px-4 py-2 custom-shadow rounded-3xl max-h-[90vh] overflow-y-auto">
-                        <CardContent channel={channel} stats={stats} />
+                        <CardContent channel={channel} stats={stats} initialEditing={defaultEditingRef.current} />
                     </MorphingDialogContent>
                 </MorphingDialogContainer>
             </MorphingDialog>
@@ -219,5 +226,29 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
                 </DialogContent>
             </Dialog>
         </>
+    );
+}
+
+// [fork] InfoButton must be inside MorphingDialog to access useMorphingDialog()
+function InfoButton({ onClick }: { onClick: () => void }) {
+    const { setIsOpen } = useMorphingDialog();
+    const t = useTranslations('channel.card');
+    return (
+        <Tooltip side="top" sideOffset={10} align="center">
+            <TooltipTrigger asChild>
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onClick();
+                        setIsOpen(true);
+                    }}
+                    className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                >
+                    <Info className="h-4 w-4" />
+                </button>
+            </TooltipTrigger>
+            <TooltipContent>{t('info')}</TooltipContent>
+        </Tooltip>
     );
 }
