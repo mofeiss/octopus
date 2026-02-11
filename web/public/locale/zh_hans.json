@@ -426,7 +426,14 @@
             "toast": {
                 "enabled": "渠道已启用",
                 "disabled": "渠道已禁用"
-            }
+            },
+            "editRemark": "编辑备注",
+            "deleteRemark": "清除备注",
+            "editRemarkPlaceholder": "输入渠道备注",
+            "editRemarkSave": "保存",
+            "deleteRemarkConfirm": "确认清除备注？",
+            "confirm": "确认",
+            "cancel": "取消"
         },
         "detail": {
             "title": {
@@ -498,6 +505,8 @@
             "modelSelected": "已选模型",
             "modelNoSelected": "暂未选择模型",
             "modelClearAll": "清除全部",
+            "modelClearPublic": "清除公开模型",
+            "modelClearCustom": "清除自定义模型",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeOpenAIEmbedding": "OpenAI Embedding",
@@ -512,7 +521,8 @@
             "autoGroupRegex": "正则匹配",
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
-            "remark": "备注"
+            "remark": "备注",
+            "channelRemark": "渠道备注"
         }
     }
 }

@@ -40,6 +40,7 @@ export interface ChannelFormData {
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
+    remark: string; // [fork]
 }
 
 export interface ChannelFormProps {
@@ -260,6 +261,20 @@ export function ChannelForm({
                 </div>
             </div>
 
+            {/* [fork] 渠道备注 */}
+            <div className="space-y-2">
+                <label htmlFor={`${idPrefix}-remark`} className="text-sm font-medium text-card-foreground">
+                    {t('channelRemark')}
+                </label>
+                <Input
+                    className='rounded-xl'
+                    id={`${idPrefix}-remark`}
+                    type="text"
+                    value={formData.remark}
+                    onChange={(event) => onFormDataChange({ ...formData, remark: event.target.value })}
+                />
+            </div>
+
             <div className="space-y-2">
                 <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-card-foreground">
@@ -405,17 +420,31 @@ export function ChannelForm({
                         <label className="text-xs font-medium text-card-foreground">
                             {t('modelSelected')} {(autoModels.length + customModels.length) > 0 && `(${autoModels.length + customModels.length})`}
                         </label>
-                        {(autoModels.length + customModels.length) > 0 && (
+                    {/* [fork] 拆分清除按钮 */}
+                        {autoModels.length > 0 && (
                             <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => {
-                                    updateModels([], []);
+                                    updateModels([], customModels);
                                 }}
                                 className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
                             >
-                                {t('modelClearAll')}
+                                {t('modelClearPublic')}
+                            </Button>
+                        )}
+                        {customModels.length > 0 && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    updateModels(autoModels, []);
+                                }}
+                                className="h-6 px-2 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-transparent"
+                            >
+                                {t('modelClearCustom')}
                             </Button>
                         )}
                     </div>
@@ -456,7 +485,7 @@ export function ChannelForm({
                 </div>
             </div>
 
-            <Accordion type="single" collapsible className="w-full border rounded-xl bg-card">
+            <Accordion type="single" collapsible defaultValue="advanced" className="w-full border rounded-xl bg-card">
                 <AccordionItem value="advanced" className="border-none">
                     <AccordionTrigger className="text-sm font-medium text-card-foreground py-3 px-4 hover:no-underline hover:bg-muted/30 rounded-xl transition-colors">
                         {t('advanced')}

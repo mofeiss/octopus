@@ -426,7 +426,14 @@
             "toast": {
                 "enabled": "Channel enabled",
                 "disabled": "Channel disabled"
-            }
+            },
+            "editRemark": "Edit Remark",
+            "deleteRemark": "Clear Remark",
+            "editRemarkPlaceholder": "Enter channel remark",
+            "editRemarkSave": "Save",
+            "deleteRemarkConfirm": "Clear this remark?",
+            "confirm": "Confirm",
+            "cancel": "Cancel"
         },
         "detail": {
             "title": {
@@ -498,6 +505,8 @@
             "modelSelected": "Selected Models",
             "modelNoSelected": "No models selected",
             "modelClearAll": "Clear All",
+            "modelClearPublic": "Clear Public",
+            "modelClearCustom": "Clear Custom",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeOpenAIEmbedding": "OpenAI Embedding",
@@ -512,7 +521,8 @@
             "autoGroupRegex": "Regex",
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "remark": "Remark"
+            "remark": "Remark",
+            "channelRemark": "Channel Remark"
         }
     }
 }

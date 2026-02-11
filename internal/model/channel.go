@@ -33,6 +33,7 @@ type Channel struct {
 	ChannelProxy  *string               `json:"channel_proxy"`
 	Stats         *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
 	MatchRegex    *string               `json:"match_regex"`
+	Remark        string                `json:"remark"` // [fork]
 }
 
 type BaseUrl struct {
@@ -72,6 +73,7 @@ type ChannelUpdateRequest struct {
 	ChannelProxy  *string                `json:"channel_proxy,omitempty"`
 	ParamOverride *string                `json:"param_override,omitempty"`
 	MatchRegex    *string                `json:"match_regex,omitempty"`
+	Remark        *string                `json:"remark,omitempty"` // [fork]
 
 	KeysToAdd    []ChannelKeyAddRequest    `json:"keys_to_add,omitempty"`
 	KeysToUpdate []ChannelKeyUpdateRequest `json:"keys_to_update,omitempty"`

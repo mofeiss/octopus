@@ -426,7 +426,14 @@
             "toast": {
                 "enabled": "供應源已啟用",
                 "disabled": "供應源已停用"
-            }
+            },
+            "editRemark": "編輯備註",
+            "deleteRemark": "清除備註",
+            "editRemarkPlaceholder": "輸入供應源備註",
+            "editRemarkSave": "儲存",
+            "deleteRemarkConfirm": "確認清除備註？",
+            "confirm": "確認",
+            "cancel": "取消"
         },
         "detail": {
             "title": {
@@ -498,6 +505,8 @@
             "modelSelected": "已選模型",
             "modelNoSelected": "暫未選擇模型",
             "modelClearAll": "清除全部",
+            "modelClearPublic": "清除公開模型",
+            "modelClearCustom": "清除自訂模型",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeOpenAIEmbedding": "OpenAI Embedding",
@@ -512,7 +521,8 @@
             "autoGroupRegex": "正規比對",
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
-            "remark": "備註"
+            "remark": "備註",
+            "channelRemark": "供應源備註"
         }
     }
 }

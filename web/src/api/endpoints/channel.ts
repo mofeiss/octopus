@@ -66,6 +66,7 @@ export type Channel = {
     channel_proxy?: string | null;
     match_regex?: string | null;
     stats: StatsChannel;
+    remark: string; // [fork]
 };
 
 // Internal type: backend may return null for slice fields; normalize to [] in select()
@@ -93,6 +94,7 @@ export type CreateChannelRequest = {
     channel_proxy?: string | null;
     param_override?: string | null;
     match_regex?: string | null;
+    remark?: string; // [fork]
 };
 
 /**
@@ -113,6 +115,7 @@ export type UpdateChannelRequest = {
     channel_proxy?: string | null;
     param_override?: string | null;
     match_regex?: string | null;
+    remark?: string; // [fork]
     // keys diff
     keys_to_add?: Array<Pick<ChannelKey, 'enabled' | 'channel_key' | 'remark'>>;
     keys_to_update?: Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string }>;

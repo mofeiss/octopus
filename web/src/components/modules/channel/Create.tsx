@@ -27,6 +27,7 @@ export function CreateDialogContent() {
         enabled: true,
         proxy: false,
         match_regex: '',
+        remark: '', // [fork]
     });
     const t = useTranslations('channel.create');
 
@@ -61,6 +62,7 @@ export function CreateDialogContent() {
                 channel_proxy: channelProxy,
                 param_override: paramOverride,
                 match_regex: formData.match_regex.trim(),
+                remark: formData.remark, // [fork]
             },
             {
                 onSuccess: () => {
@@ -79,6 +81,7 @@ export function CreateDialogContent() {
                         enabled: true,
                         proxy: false,
                         match_regex: '',
+                        remark: '', // [fork]
                     });
                     setIsOpen(false);
                 }
