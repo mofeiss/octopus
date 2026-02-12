@@ -21,6 +21,7 @@
     "apiKeyDashboard": {
         "error": "Failed to load data",
         "logout": "Logout",
+        "logTab": "Log",
         "requestStats": "Request Stats",
         "totalStats": "Total Stats",
         "inputStats": "Input Stats",

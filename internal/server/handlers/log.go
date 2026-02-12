@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
@@ -34,11 +35,28 @@ func init() {
 			router.NewRoute("/stream", http.MethodGet).
 				Handle(streamLog),
 		)
+
+	router.NewGroupRouter("/api/v1/apikey/log").
+		Use(middleware.APIKeyAuth()).
+		AddRoute(
+			router.NewRoute("/list", http.MethodGet).
+				Handle(listAPIKeyLog),
+		).
+		AddRoute(
+			router.NewRoute("/stream-token", http.MethodGet).
+				Handle(getAPIKeyStreamToken),
+		)
+
+	router.NewGroupRouter("/api/v1/apikey/log").
+		AddRoute(
+			router.NewRoute("/stream", http.MethodGet).
+				Handle(streamAPIKeyLog),
+		)
 }
 
-func listLog(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+func parseLogListParams(c *gin.Context) (page int, pageSize int, startTime *int, endTime *int, err error) {
+	page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ = strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	startTimeStr := c.Query("start_time")
 	endTimeStr := c.Query("end_time")
 
@@ -49,51 +67,40 @@ func listLog(c *gin.Context) {
 		pageSize = 20
 	}
 
-	var startTime, endTime *int
 	if startTimeStr != "" && endTimeStr != "" {
-		st, err := strconv.Atoi(startTimeStr)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
+		st, parseErr := strconv.Atoi(startTimeStr)
+		if parseErr != nil {
+			return 0, 0, nil, nil, parseErr
 		}
-		et, err := strconv.Atoi(endTimeStr)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
+		et, parseErr := strconv.Atoi(endTimeStr)
+		if parseErr != nil {
+			return 0, 0, nil, nil, parseErr
 		}
 		startTime = &st
 		endTime = &et
 	}
 
-	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize)
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	resp.Success(c, logs)
+	return page, pageSize, startTime, endTime, nil
 }
 
-func clearLog(c *gin.Context) {
-	if err := op.RelayLogClear(c.Request.Context()); err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
+func matchLogScope(relayLog model.RelayLog, scope op.RelayLogStreamScope) bool {
+	if scope.APIKeyID <= 0 {
+		return true
 	}
-	resp.Success(c, nil)
+	if relayLog.APIKeyID == scope.APIKeyID {
+		return true
+	}
+	return relayLog.APIKeyID == 0 && scope.APIKeyName != "" && relayLog.APIKeyName == scope.APIKeyName
 }
 
-func getStreamToken(c *gin.Context) {
-	token, err := op.RelayLogStreamTokenCreate()
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	resp.Success(c, gin.H{"token": token})
-}
-
-func streamLog(c *gin.Context) {
+func streamLogWithScope(c *gin.Context, requireAPIKeyScope bool) {
 	token := c.Query("token")
-	if token == "" || !op.RelayLogStreamTokenVerify(token) {
+	scope, ok := op.RelayLogStreamTokenVerify(token)
+	if token == "" || !ok {
+		resp.Error(c, http.StatusUnauthorized, "invalid stream token")
+		return
+	}
+	if requireAPIKeyScope && scope.APIKeyID <= 0 {
 		resp.Error(c, http.StatusUnauthorized, "invalid stream token")
 		return
 	}
@@ -114,16 +121,90 @@ func streamLog(c *gin.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case log, ok := <-logChan:
-			if !ok {
+		case relayLog, alive := <-logChan:
+			if !alive {
 				return
 			}
-			data, err := json.Marshal(log)
-			if err != nil {
+			if !matchLogScope(relayLog, scope) {
+				continue
+			}
+			data, marshalErr := json.Marshal(relayLog)
+			if marshalErr != nil {
 				continue
 			}
 			c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", data)))
 			c.Writer.Flush()
 		}
 	}
+}
+
+func listLog(c *gin.Context) {
+	page, pageSize, startTime, endTime, err := parseLogListParams(c)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, nil, nil)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	resp.Success(c, logs)
+}
+
+func clearLog(c *gin.Context) {
+	if err := op.RelayLogClear(c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, nil)
+}
+
+func getStreamToken(c *gin.Context) {
+	token, err := op.RelayLogStreamTokenCreate(op.RelayLogStreamScope{})
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"token": token})
+}
+
+func streamLog(c *gin.Context) {
+	streamLogWithScope(c, false)
+}
+
+func listAPIKeyLog(c *gin.Context) {
+	page, pageSize, startTime, endTime, err := parseLogListParams(c)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	apiKeyID := c.GetInt("api_key_id")
+	apiKeyName := c.GetString("api_key_name")
+	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, &apiKeyID, &apiKeyName)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, logs)
+}
+
+func getAPIKeyStreamToken(c *gin.Context) {
+	scope := op.RelayLogStreamScope{
+		APIKeyID:   c.GetInt("api_key_id"),
+		APIKeyName: c.GetString("api_key_name"),
+	}
+	token, err := op.RelayLogStreamTokenCreate(scope)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, gin.H{"token": token})
+}
+
+func streamAPIKeyLog(c *gin.Context) {
+	streamLogWithScope(c, true)
 }

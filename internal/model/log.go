@@ -45,8 +45,9 @@ type RelayLog struct {
 	Attempts         []ChannelAttempt `json:"attempts" gorm:"serializer:json"`          // 所有尝试记录
 	TotalAttempts    int              `json:"total_attempts"`                           // 总尝试次数
 	// [fork] channel key & user apikey info for log display
-	APIKeyName        string `json:"api_key_name" gorm:"default:''"`           // user apikey name
-	ChannelKeyPreview string `json:"channel_key_preview" gorm:"default:''"`    // masked channel key
-	ChannelKeyRemark  string `json:"channel_key_remark" gorm:"default:''"`     // channel key remark
-	ChannelKeyIndex   int    `json:"channel_key_index" gorm:"default:0"`       // 1-based index in channel
+	APIKeyID          int    `json:"api_key_id" gorm:"default:0;index"`     // user apikey id
+	APIKeyName        string `json:"api_key_name" gorm:"default:''"`        // user apikey name
+	ChannelKeyPreview string `json:"channel_key_preview" gorm:"default:''"` // masked channel key
+	ChannelKeyRemark  string `json:"channel_key_remark" gorm:"default:''"`  // channel key remark
+	ChannelKeyIndex   int    `json:"channel_key_index" gorm:"default:0"`    // 1-based index in channel
 }

@@ -49,11 +49,14 @@ export interface RelayLog {
     attempts?: ChannelAttempt[]; // 所有尝试记录
     total_attempts?: number;     // 总尝试次数
     // [fork] channel key & user apikey info
+    api_key_id?: number;
     api_key_name?: string;
     channel_key_preview?: string;
     channel_key_remark?: string;
     channel_key_index?: number;
 }
+
+export type LogScope = 'admin' | 'apikey';
 
 /**
  * 日志列表查询参数
@@ -90,7 +93,7 @@ export function useClearLogs() {
     });
 }
 
-const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize] as const;
+const logsInfiniteQueryKey = (scope: LogScope, pageSize: number) => ['logs', scope, 'infinite', pageSize] as const;
 
 /**
  * 日志管理 Hook
@@ -105,8 +108,9 @@ const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize
  * // 滚动到底部时加载更多
  * if (hasMore && !isLoadingMore) loadMore();
  */
-export function useLogs(options: { pageSize?: number } = {}) {
-    const { pageSize = 20 } = options;
+export function useLogs(options: { pageSize?: number; scope?: LogScope } = {}) {
+    const { pageSize = 20, scope = 'admin' } = options;
+    const logApiBase = scope === 'apikey' ? '/api/v1/apikey/log' : '/api/v1/log';
 
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
@@ -115,13 +119,13 @@ export function useLogs(options: { pageSize?: number } = {}) {
     const queryClient = useQueryClient();
 
     const logsQuery = useInfiniteQuery({
-        queryKey: logsInfiniteQueryKey(pageSize),
+        queryKey: logsInfiniteQueryKey(scope, pageSize),
         initialPageParam: 1,
         queryFn: async ({ pageParam }) => {
             const params = new URLSearchParams();
             params.set('page', String(pageParam));
             params.set('page_size', String(pageSize));
-            const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${params.toString()}`);
+            const result = await apiClient.get<RelayLog[] | null>(`${logApiBase}/list?${params.toString()}`);
             return result ?? [];
         },
         getNextPageParam: (lastPage, allPages) => {
@@ -165,10 +169,10 @@ export function useLogs(options: { pageSize?: number } = {}) {
 
         const connect = async () => {
             try {
-                const { token } = await apiClient.get<{ token: string }>('/api/v1/log/stream-token');
+                const { token } = await apiClient.get<{ token: string }>(`${logApiBase}/stream-token`);
                 if (cancelled) return;
 
-                const eventSource = new EventSource(`${API_BASE_URL}/api/v1/log/stream?token=${token}`);
+                const eventSource = new EventSource(`${API_BASE_URL}${logApiBase}/stream?token=${token}`);
                 eventSourceRef.current = eventSource;
 
                 eventSource.onopen = () => {
@@ -180,7 +184,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
                     try {
                         const log: RelayLog = JSON.parse(event.data);
                         queryClient.setQueryData(
-                            logsInfiniteQueryKey(pageSize),
+                            logsInfiniteQueryKey(scope, pageSize),
                             (old: InfiniteData<RelayLog[], number> | undefined) => {
                                 if (!old) {
                                     return { pages: [[log]], pageParams: [1] };
@@ -219,11 +223,11 @@ export function useLogs(options: { pageSize?: number } = {}) {
             eventSourceRef.current = null;
             setIsConnected(false);
         };
-    }, [pageSize, queryClient]);
+    }, [logApiBase, pageSize, queryClient, scope]);
 
     const clear = useCallback(() => {
-        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
-    }, [pageSize, queryClient]);
+        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(scope, pageSize) });
+    }, [pageSize, queryClient, scope]);
 
     return {
         logs,

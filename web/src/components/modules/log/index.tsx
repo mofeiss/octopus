@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useRef } from 'react';
-import { useLogs } from '@/api/endpoints/log';
+import { type LogScope, useLogs } from '@/api/endpoints/log';
 import { PageWrapper } from '@/components/common/PageWrapper';
 import { LogCard } from './Item';
 import { Loader2 } from 'lucide-react';
@@ -32,10 +32,10 @@ function formatSegmentTime(timestamp: number, locale: string): string {
  * - SSE 实时推送新日志
  * - 滚动自动加载更多
  */
-export function Log() {
+export function Log({ scope = 'admin' }: { scope?: LogScope }) {
     const t = useTranslations('log');
     const locale = useLocale();
-    const { logs, hasMore, isLoading, isLoadingMore, loadMore } = useLogs({ pageSize: 10 });
+    const { logs, hasMore, isLoading, isLoadingMore, loadMore } = useLogs({ pageSize: 10, scope });
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const armedRef = useRef(true);
     const segmentedLogs = useMemo(() => {

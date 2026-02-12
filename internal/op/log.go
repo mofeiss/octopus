@@ -24,10 +24,15 @@ var relayLogFlushLock sync.Mutex
 var relayLogSubscribers = make(map[chan model.RelayLog]struct{})
 var relayLogSubscribersLock sync.RWMutex
 
-var relayLogStreamTokens = make(map[string]struct{})
+type RelayLogStreamScope struct {
+	APIKeyID   int
+	APIKeyName string
+}
+
+var relayLogStreamTokens = make(map[string]RelayLogStreamScope)
 var relayLogStreamTokensLock sync.RWMutex
 
-func RelayLogStreamTokenCreate() (string, error) {
+func RelayLogStreamTokenCreate(scope RelayLogStreamScope) (string, error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
@@ -35,17 +40,17 @@ func RelayLogStreamTokenCreate() (string, error) {
 	token := hex.EncodeToString(bytes)
 
 	relayLogStreamTokensLock.Lock()
-	relayLogStreamTokens[token] = struct{}{}
+	relayLogStreamTokens[token] = scope
 	relayLogStreamTokensLock.Unlock()
 
 	return token, nil
 }
 
-func RelayLogStreamTokenVerify(token string) bool {
+func RelayLogStreamTokenVerify(token string) (RelayLogStreamScope, bool) {
 	relayLogStreamTokensLock.RLock()
-	_, ok := relayLogStreamTokens[token]
+	scope, ok := relayLogStreamTokens[token]
 	relayLogStreamTokensLock.RUnlock()
-	return ok
+	return scope, ok
 }
 
 func RelayLogStreamTokenRevoke(token string) {
@@ -186,9 +191,19 @@ func relayLogCleanup(ctx context.Context) error {
 	return db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{}).Error
 }
 
+func matchRelayLogAPIKeyScope(log model.RelayLog, apiKeyID *int, apiKeyName *string) bool {
+	if apiKeyID == nil || *apiKeyID <= 0 {
+		return true
+	}
+	if log.APIKeyID == *apiKeyID {
+		return true
+	}
+	return log.APIKeyID == 0 && apiKeyName != nil && *apiKeyName != "" && log.APIKeyName == *apiKeyName
+}
+
 // RelayLogList 查询日志列表，支持可选的时间范围过滤
 // startTime 和 endTime 为 nil 时表示不限制时间范围
-func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize int) ([]model.RelayLog, error) {
+func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize int, apiKeyID *int, apiKeyName *string) ([]model.RelayLog, error) {
 	enabled, err := SettingGetBool(model.SettingKeyRelayLogKeepEnabled)
 	if err != nil {
 		return nil, err
@@ -199,6 +214,9 @@ func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize i
 	relayLogCacheLock.Lock()
 	var cachedLogs []model.RelayLog
 	for _, log := range relayLogCache {
+		if !matchRelayLogAPIKeyScope(log, apiKeyID, apiKeyName) {
+			continue
+		}
 		if hasTimeFilter {
 			if log.Time >= int64(*startTime) && log.Time <= int64(*endTime) {
 				cachedLogs = append(cachedLogs, log)
@@ -240,6 +258,13 @@ func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize i
 			query := db.GetDB().WithContext(ctx)
 			if hasTimeFilter {
 				query = query.Where("time >= ? AND time <= ?", *startTime, *endTime)
+			}
+			if apiKeyID != nil && *apiKeyID > 0 {
+				if apiKeyName != nil && *apiKeyName != "" {
+					query = query.Where("(api_key_id = ? OR (api_key_id = 0 AND api_key_name = ?))", *apiKeyID, *apiKeyName)
+				} else {
+					query = query.Where("api_key_id = ?", *apiKeyID)
+				}
 			}
 
 			var dbLogs []model.RelayLog

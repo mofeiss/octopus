@@ -183,6 +183,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	}
 	// [fork] populate user apikey name
 	if m.APIKeyID > 0 {
+		relayLog.APIKeyID = m.APIKeyID
 		if apiKey, akErr := op.APIKeyGet(m.APIKeyID, ctx); akErr == nil {
 			relayLog.APIKeyName = apiKey.Name
 		}

@@ -21,6 +21,7 @@
     "apiKeyDashboard": {
         "error": "加载数据失败",
         "logout": "退出",
+        "logTab": "日志",
         "requestStats": "请求统计",
         "totalStats": "全部统计",
         "inputStats": "输入统计",

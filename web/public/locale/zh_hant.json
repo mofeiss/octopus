@@ -21,6 +21,7 @@
     "apiKeyDashboard": {
         "error": "載入資料失敗",
         "logout": "登出",
+        "logTab": "日誌",
         "requestStats": "請求統計",
         "totalStats": "全部統計",
         "inputStats": "輸入統計",
