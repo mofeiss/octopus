@@ -164,7 +164,7 @@ export function Card({ channel, stats }: { channel: Channel; stats: StatsMetrics
 
                 <MorphingDialogContainer>
                     <MorphingDialogContent className="w-full md:max-w-xl bg-card text-card-foreground px-4 py-2 custom-shadow rounded-3xl max-h-[90vh] overflow-y-auto">
-                        <CardContent channel={channel} stats={stats} initialEditing={defaultEditingRef.current} />
+                        <CardContent channel={channel} stats={stats} editingRef={defaultEditingRef} />
                     </MorphingDialogContent>
                 </MorphingDialogContainer>
             </MorphingDialog>

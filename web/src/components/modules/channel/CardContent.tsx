@@ -27,11 +27,11 @@ import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-export function CardContent({ channel, stats, initialEditing = false }: { channel: Channel; stats: StatsMetricsFormatted; initialEditing?: boolean }) {
+export function CardContent({ channel, stats, editingRef }: { channel: Channel; stats: StatsMetricsFormatted; editingRef?: React.RefObject<boolean> }) {
     const { setIsOpen } = useMorphingDialog();
     const updateChannel = useUpdateChannel();
     const deleteChannel = useDeleteChannel();
-    const [isEditing, setIsEditing] = useState(initialEditing);
+    const [isEditing, setIsEditing] = useState(() => editingRef?.current ?? false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
         name: channel.name,
