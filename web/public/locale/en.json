@@ -315,7 +315,14 @@
             "submitting": "Creating..."
         },
         "card": {
-            "empty": "No rules"
+            "empty": "No rules",
+            "editRemark": "Edit Remark",
+            "deleteRemark": "Clear Remark",
+            "editRemarkPlaceholder": "Enter group remark",
+            "editRemarkSave": "Save",
+            "deleteRemarkConfirm": "Clear this remark?",
+            "confirm": "Confirm",
+            "cancel": "Cancel"
         },
         "detail": {
             "actions": {
@@ -339,6 +346,7 @@
             "routeAliases": "Route Aliases",
             "routeAliasesPlaceholder": "e.g. gpt-4,gpt4,gpt-4-latest (comma-separated)",
             "routeAliasesHint": "Alternative model names that route to this group, comma-separated",
+            "groupRemark": "Group Remark",
             "items": "Selected Models",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",

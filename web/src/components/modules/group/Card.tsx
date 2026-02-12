@@ -16,6 +16,15 @@ import { GroupEditor, type GroupEditorValues } from './Editor';
 import { buildChannelNameByModelKey, modelChannelKey, MODE_LABELS } from './utils';
 import { GroupMode, type GroupUpdateRequest } from '@/api/endpoints/group';
 import {
+    Dialog,
+    DialogContent,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
     MorphingDialog,
     MorphingDialogClose,
     MorphingDialogContainer,
@@ -56,6 +65,7 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
                         first_token_time_out: group.first_token_time_out ?? 0,
                         session_keep_time: group.session_keep_time ?? 0,
                         route_aliases: group.route_aliases ?? '', // [fork]
+                        remark: group.remark ?? '', // [fork]
                         members: displayMembers,
                     }}
                     submitText={t('detail.actions.save')}
@@ -77,6 +87,9 @@ export function GroupCard({ group }: { group: Group }) {
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [editRemarkOpen, setEditRemarkOpen] = useState(false);
+    const [deleteRemarkOpen, setDeleteRemarkOpen] = useState(false);
+    const [remarkDraft, setRemarkDraft] = useState('');
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const isDragging = useRef(false);
     const weightTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -108,7 +121,11 @@ export function GroupCard({ group }: { group: Group }) {
     );
 
     useEffect(() => {
-        if (!isDragging.current) setMembers([...displayMembers]);
+        if (!isDragging.current) {
+            // Keep current drag/edit UX behavior; this sync is intentionally effect-driven.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setMembers([...displayMembers]);
+        }
     }, [displayMembers]);
 
     useEffect(() => {
@@ -121,6 +138,39 @@ export function GroupCard({ group }: { group: Group }) {
 
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
     const onError = useCallback((error: Error) => toast.error(t('toast.updateFailed'), { description: error.message }), [t]);
+
+    const handleEditRemarkOpen = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        setRemarkDraft(group.remark ?? '');
+        setEditRemarkOpen(true);
+    }, [group.remark]);
+
+    const handleEditRemarkSave = useCallback(() => {
+        if (!group.id) return;
+        updateGroup.mutate(
+            { id: group.id, remark: remarkDraft },
+            {
+                onSuccess: () => setEditRemarkOpen(false),
+                onError,
+            }
+        );
+    }, [group.id, onError, remarkDraft, updateGroup]);
+
+    const handleDeleteRemarkOpen = useCallback((e: React.MouseEvent) => {
+        e.stopPropagation();
+        setDeleteRemarkOpen(true);
+    }, []);
+
+    const handleDeleteRemarkConfirm = useCallback(() => {
+        if (!group.id) return;
+        updateGroup.mutate(
+            { id: group.id, remark: '' },
+            {
+                onSuccess: () => setDeleteRemarkOpen(false),
+                onError,
+            }
+        );
+    }, [group.id, onError, updateGroup]);
 
     // Avoid UI flicker: drag-reorder also uses the same mutation, so only "mode switch" should lock mode buttons.
     const isUpdatingMode = (() => {
@@ -240,6 +290,7 @@ export function GroupCard({ group }: { group: Group }) {
         if (nextSessionKeepTime !== (group.session_keep_time ?? 0)) payload.session_keep_time = nextSessionKeepTime;
         const nextRouteAliases = (values.route_aliases ?? '').trim(); // [fork]
         if (nextRouteAliases !== (group.route_aliases ?? '')) payload.route_aliases = nextRouteAliases; // [fork]
+        if (values.remark !== (group.remark ?? '')) payload.remark = values.remark; // [fork]
         if (items_to_add.length) payload.items_to_add = items_to_add;
         if (items_to_update.length) payload.items_to_update = items_to_update;
         if (items_to_delete.length) payload.items_to_delete = items_to_delete;
@@ -256,120 +307,199 @@ export function GroupCard({ group }: { group: Group }) {
             },
             onError,
         });
-    }, [group.first_token_time_out, group.session_keep_time, group.route_aliases, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
+    }, [group.first_token_time_out, group.session_keep_time, group.route_aliases, group.remark, group.id, group.items, group.match_regex, group.mode, group.name, onSuccess, onError, updateGroup]);
 
     return (
-        <article className="flex flex-col h-full rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
-            <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
-                <div className="relative flex-1 mr-2 min-w-0 group/title">
-                    <Tooltip side="top" sideOffset={10} align="center">
-                        <TooltipTrigger asChild>
-                            <h3 className="text-lg font-bold truncate">{group.name}</h3>
-                        </TooltipTrigger>
-                        <TooltipContent key={group.name}>{group.name}</TooltipContent>
-                    </Tooltip>
-                </div>
+        <>
+            <article className="flex flex-col h-full rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
+                <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
+                    <div className="relative flex-1 mr-2 min-w-0 group/title">
+                        <Tooltip side="top" sideOffset={10} align="center">
+                            <TooltipTrigger asChild>
+                                <h3 className="text-lg font-bold truncate">{group.name}</h3>
+                            </TooltipTrigger>
+                            <TooltipContent key={group.name}>{group.name}</TooltipContent>
+                        </Tooltip>
+                    </div>
 
-                <div className="flex items-center gap-1 shrink-0">
-                    <MorphingDialog>
-                        <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
-                            <Tooltip side="top" sideOffset={10} align="center">
-                                <TooltipTrigger asChild>
-                                    <Pencil className="size-4" />
-                                </TooltipTrigger>
-                                <TooltipContent>{t('detail.actions.edit')}</TooltipContent>
-                            </Tooltip>
-                        </MorphingDialogTrigger>
+                    <div className="flex items-center gap-1 shrink-0">
+                        <MorphingDialog>
+                            <MorphingDialogTrigger className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground">
+                                <Tooltip side="top" sideOffset={10} align="center">
+                                    <TooltipTrigger asChild>
+                                        <Pencil className="size-4" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>{t('detail.actions.edit')}</TooltipContent>
+                                </Tooltip>
+                            </MorphingDialogTrigger>
 
-                        <MorphingDialogContainer>
-                            <MorphingDialogContent className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
-                                <EditDialogContent
-                                    group={group}
-                                    displayMembers={displayMembers}
-                                    isSubmitting={updateGroup.isPending}
-                                    onSubmit={handleSubmitEdit}
-                                />
-                            </MorphingDialogContent>
-                        </MorphingDialogContainer>
-                    </MorphingDialog>
+                            <MorphingDialogContainer>
+                                <MorphingDialogContent className="relative w-screen max-w-full md:max-w-4xl bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+                                    <EditDialogContent
+                                        group={group}
+                                        displayMembers={displayMembers}
+                                        isSubmitting={updateGroup.isPending}
+                                        onSubmit={handleSubmitEdit}
+                                    />
+                                </MorphingDialogContent>
+                            </MorphingDialogContainer>
+                        </MorphingDialog>
 
-                    <Tooltip side="top" sideOffset={10} align="center">
-                        <TooltipTrigger>
-                            <CopyIconButton
-                                text={group.name}
-                                className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
-                                copyIconClassName="size-4"
-                                checkIconClassName="size-4 text-primary"
-                            />
-                        </TooltipTrigger>
-                        <TooltipContent>{t('detail.actions.copyName')}</TooltipContent>
-                    </Tooltip>
-                    {!confirmDelete && (
                         <Tooltip side="top" sideOffset={10} align="center">
                             <TooltipTrigger>
-                                <motion.button layoutId={`delete-btn-group-${group.id}`} type="button" onClick={() => setConfirmDelete(true)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
-                                    <Trash2 className="size-4" />
-                                </motion.button>
+                                <CopyIconButton
+                                    text={group.name}
+                                    className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
+                                    copyIconClassName="size-4"
+                                    checkIconClassName="size-4 text-primary"
+                                />
                             </TooltipTrigger>
-                            <TooltipContent>{t('detail.actions.delete')}</TooltipContent>
+                            <TooltipContent>{t('detail.actions.copyName')}</TooltipContent>
                         </Tooltip>
-                    )}
+                        {!confirmDelete && (
+                            <Tooltip side="top" sideOffset={10} align="center">
+                                <TooltipTrigger>
+                                    <motion.button layoutId={`delete-btn-group-${group.id}`} type="button" onClick={() => setConfirmDelete(true)} className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
+                                        <Trash2 className="size-4" />
+                                    </motion.button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t('detail.actions.delete')}</TooltipContent>
+                            </Tooltip>
+                        )}
+                    </div>
+
+                    <AnimatePresence>
+                        {confirmDelete && (
+                            <motion.div layoutId={`delete-btn-group-${group.id}`} className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-2 rounded-xl" transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+                                <button type="button" onClick={() => setConfirmDelete(false)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95">
+                                    <X className="size-4" />
+                                </button>
+                                <button type="button" onClick={() => group.id && deleteGroup.mutate(group.id, { onSuccess: () => toast.success(t('toast.deleted')) })} disabled={deleteGroup.isPending} className="flex-1 h-7 flex items-center justify-center gap-2 rounded-lg bg-destructive-foreground text-destructive text-sm font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <Trash2 className="size-3.5" />
+                                    {t('detail.actions.confirmDelete')}
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </header>
+
+                {group.remark && (
+                    <div className="relative flex items-center justify-between gap-2 -mt-1 mb-3">
+                        <span className="text-sm text-primary truncate min-w-0">{group.remark}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                            <button
+                                type="button"
+                                onClick={handleEditRemarkOpen}
+                                className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                            >
+                                <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleDeleteRemarkOpen}
+                                className="p-1 rounded-md text-muted-foreground/50 hover:text-destructive transition-colors"
+                            >
+                                <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Mode: quick switch (no need to enter Edit) */}
+                <div className="flex gap-1 mb-3">
+                    {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted] as const).map((m) => (
+                        <button
+                            key={m}
+                            type="button"
+                            aria-disabled={isUpdatingMode || !group.id}
+                            onClick={() => {
+                                if (isUpdatingMode || !group.id) return;
+                                if (m === group.mode) return;
+                                updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess, onError });
+                            }}
+                            className={cn(
+                                'flex-1 py-1 text-xs rounded-lg transition-colors',
+                                group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80',
+                                // Keep visuals stable (no opacity/disabled flicker) while still preventing double-submit via onClick guard.
+                                (!group.id) && 'cursor-not-allowed opacity-50'
+                            )}
+                        >
+                            {t(`mode.${MODE_LABELS[m]}`)}
+                        </button>
+                    ))}
                 </div>
 
-                <AnimatePresence>
-                    {confirmDelete && (
-                        <motion.div layoutId={`delete-btn-group-${group.id}`} className="absolute inset-0 flex items-center justify-center gap-2 bg-destructive p-2 rounded-xl" transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
-                            <button type="button" onClick={() => setConfirmDelete(false)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-destructive-foreground/20 text-destructive-foreground transition-all hover:bg-destructive-foreground/30 active:scale-95">
-                                <X className="size-4" />
-                            </button>
-                            <button type="button" onClick={() => group.id && deleteGroup.mutate(group.id, { onSuccess: () => toast.success(t('toast.deleted')) })} disabled={deleteGroup.isPending} className="flex-1 h-7 flex items-center justify-center gap-2 rounded-lg bg-destructive-foreground text-destructive text-sm font-semibold transition-all hover:bg-destructive-foreground/90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
-                                <Trash2 className="size-3.5" />
-                                {t('detail.actions.confirmDelete')}
-                            </button>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </header>
+                <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative flex-1 min-h-20">
+                    <MemberList
+                        members={members}
+                        onReorder={setMembers}
+                        onRemove={handleRemoveMember}
+                        onWeightChange={handleWeightChange}
+                        onToggleEnabled={handleToggleItemEnabled}
+                        onDragStart={handleDragStart}
+                        onDrop={handleDropReorder}
+                        onDragFinish={handleDragFinish}
+                        autoScrollOnAdd={false}
+                        showWeight={group.mode === GroupMode.Weighted}
+                        layoutScope={`card-${group.id ?? 'unknown'}`}
+                    />
+                </section>
+            </article>
 
-            {/* Mode: quick switch (no need to enter Edit) */}
-            <div className="flex gap-1 mb-3">
-                {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted] as const).map((m) => (
-                    <button
-                        key={m}
-                        type="button"
-                        aria-disabled={isUpdatingMode || !group.id}
-                        onClick={() => {
-                            if (isUpdatingMode || !group.id) return;
-                            if (m === group.mode) return;
-                            updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess, onError });
+            <Dialog open={editRemarkOpen} onOpenChange={setEditRemarkOpen}>
+                <DialogContent className="sm:max-w-md rounded-2xl">
+                    <DialogHeader>
+                        <DialogTitle>{t('card.editRemark')}</DialogTitle>
+                    </DialogHeader>
+                    <Input
+                        value={remarkDraft}
+                        onChange={(e) => setRemarkDraft(e.target.value)}
+                        placeholder={t('card.editRemarkPlaceholder')}
+                        className="rounded-xl"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleEditRemarkSave();
+                            }
                         }}
-                        className={cn(
-                            'flex-1 py-1 text-xs rounded-lg transition-colors',
-                            group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80',
-                            // Keep visuals stable (no opacity/disabled flicker) while still preventing double-submit via onClick guard.
-                            (!group.id) && 'cursor-not-allowed opacity-50'
-                        )}
-                    >
-                        {t(`mode.${MODE_LABELS[m]}`)}
-                    </button>
-                ))}
-            </div>
+                    />
+                    <DialogFooter>
+                        <Button
+                            onClick={handleEditRemarkSave}
+                            disabled={updateGroup.isPending}
+                            className="rounded-xl"
+                        >
+                            {t('card.editRemarkSave')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
-            <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative flex-1 min-h-20">
-                <MemberList
-                    members={members}
-                    onReorder={setMembers}
-                    onRemove={handleRemoveMember}
-                    onWeightChange={handleWeightChange}
-                    onToggleEnabled={handleToggleItemEnabled}
-                    onDragStart={handleDragStart}
-                    onDrop={handleDropReorder}
-                    onDragFinish={handleDragFinish}
-                    autoScrollOnAdd={false}
-                    showWeight={group.mode === GroupMode.Weighted}
-                    layoutScope={`card-${group.id ?? 'unknown'}`}
-                />
-            </section>
-        </article >
+            <Dialog open={deleteRemarkOpen} onOpenChange={setDeleteRemarkOpen}>
+                <DialogContent className="sm:max-w-md rounded-2xl">
+                    <DialogHeader>
+                        <DialogTitle>{t('card.deleteRemark')}</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-muted-foreground">{t('card.deleteRemarkConfirm')}</p>
+                    <DialogFooter>
+                        <Button
+                            variant="secondary"
+                            onClick={() => setDeleteRemarkOpen(false)}
+                            className="rounded-xl"
+                        >
+                            {t('card.cancel')}
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteRemarkConfirm}
+                            disabled={updateGroup.isPending}
+                            className="rounded-xl"
+                        >
+                            {t('card.confirm')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }

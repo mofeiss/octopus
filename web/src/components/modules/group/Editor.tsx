@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
-import { Check, ChevronDownIcon, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ChevronDownIcon, HelpCircle, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
@@ -16,9 +16,6 @@ import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
-import { HelpCircle } from 'lucide-react';
-
-
 
 export type GroupEditorValues = {
     name: string;
@@ -27,6 +24,7 @@ export type GroupEditorValues = {
     first_token_time_out: number;
     session_keep_time: number;
     route_aliases: string; // [fork]
+    remark: string; // [fork]
     members: SelectedMember[];
 };
 
@@ -236,6 +234,7 @@ export function GroupEditor({
     const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
     const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
     const [routeAliases, setRouteAliases] = useState(initial?.route_aliases ?? ''); // [fork]
+    const [remark, setRemark] = useState(initial?.remark ?? ''); // [fork]
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -320,6 +319,7 @@ export function GroupEditor({
             first_token_time_out: firstTokenTimeOut,
             session_keep_time: sessionKeepTime,
             route_aliases: routeAliases.trim(), // [fork]
+            remark, // [fork]
             members: selectedMembers,
         });
     };
@@ -448,6 +448,17 @@ export function GroupEditor({
                         />
                     </Field>
 
+                    {/* [fork] Group Remark */}
+                    <Field>
+                        <FieldLabel htmlFor="group-remark">{t('form.groupRemark')}</FieldLabel>
+                        <Input
+                            id="group-remark"
+                            value={remark}
+                            onChange={(e) => setRemark(e.target.value)}
+                            className="rounded-xl"
+                        />
+                    </Field>
+
                     {/* Mode */}
                     <div className="flex gap-1">
                         {([1, 2, 3, 4] as const).map((m) => (
@@ -507,5 +518,4 @@ export function GroupEditor({
         </form>
     );
 }
-
 

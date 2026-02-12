@@ -36,6 +36,7 @@ export interface Group {
     first_token_time_out?: number;
     session_keep_time?: number;
     route_aliases?: string;  // [fork] 逗号分隔的路由别名
+    remark: string;          // [fork] 分组备注
     sort_order?: number;     // [fork] 分组排序
     items?: GroupItem[];
 }
@@ -70,6 +71,7 @@ export interface GroupUpdateRequest {
     first_token_time_out?: number;        // 仅在超时变更时发送
     session_keep_time?: number;           // 仅在会话保持时间变更时发送
     route_aliases?: string;              // [fork] 仅在路由别名变更时发送
+    remark?: string;                     // [fork] 仅在备注变更时发送
     items_to_add?: GroupItemAddRequest[];    // 新增的 items
     items_to_update?: GroupItemUpdateRequest[]; // 更新的 items (priority 变更)
     items_to_delete?: number[];              // 删除的 item IDs
@@ -242,4 +244,3 @@ export function useEnableGroupItem() {
 //         },
 //     });
 // }
-

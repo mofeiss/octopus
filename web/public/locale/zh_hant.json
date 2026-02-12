@@ -315,7 +315,14 @@
             "submitting": "建立中..."
         },
         "card": {
-            "empty": "暫無規則"
+            "empty": "暫無規則",
+            "editRemark": "編輯備註",
+            "deleteRemark": "清除備註",
+            "editRemarkPlaceholder": "輸入分組備註",
+            "editRemarkSave": "儲存",
+            "deleteRemarkConfirm": "確認清除備註？",
+            "confirm": "確認",
+            "cancel": "取消"
         },
         "detail": {
             "actions": {
@@ -339,6 +346,7 @@
             "routeAliases": "路由別名",
             "routeAliasesPlaceholder": "例: gpt-4,gpt4,gpt-4-latest (逗號分隔)",
             "routeAliasesHint": "可透過這些別名路由到本分組，逗號分隔",
+            "groupRemark": "分組備註",
             "items": "已選模型",
             "addItem": "新增模型",
             "autoAdd": "自動新增",

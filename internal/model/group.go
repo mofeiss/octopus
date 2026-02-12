@@ -17,6 +17,7 @@ type Group struct {
 	FirstTokenTimeOut int         `json:"first_token_time_out"` // 单个渠道首个Token响应超时时间(秒)
 	SessionKeepTime   int         `json:"session_keep_time"`    // 会话保持时间(秒) 0 为禁用
 	RouteAliases      string      `json:"route_aliases"`        // [fork] 逗号分隔的路由别名
+	Remark            string      `json:"remark"`               // [fork] 分组备注
 	SortOrder         int         `json:"sort_order"`           // [fork] 分组排序字段
 	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
@@ -40,6 +41,7 @@ type GroupUpdateRequest struct {
 	FirstTokenTimeOut *int                     `json:"first_token_time_out,omitempty"` // 仅在超时变更时发送(秒)
 	SessionKeepTime   *int                     `json:"session_keep_time,omitempty"`    // 仅在会话保持时间变更时发送(秒)
 	RouteAliases      *string                  `json:"route_aliases,omitempty"`        // [fork] 仅在路由别名变更时发送
+	Remark            *string                  `json:"remark,omitempty"`               // [fork] 仅在备注变更时发送
 	ItemsToAdd        []GroupItemAddRequest    `json:"items_to_add,omitempty"`         // 新增的 items
 	ItemsToUpdate     []GroupItemUpdateRequest `json:"items_to_update,omitempty"`      // 更新的 items (priority 变更)
 	ItemsToDelete     []int                    `json:"items_to_delete,omitempty"`      // 删除的 item IDs

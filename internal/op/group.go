@@ -107,6 +107,11 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		selectFields = append(selectFields, "route_aliases")
 		updates.RouteAliases = *req.RouteAliases
 	}
+	// [fork] remark
+	if req.Remark != nil {
+		selectFields = append(selectFields, "remark")
+		updates.Remark = *req.Remark
+	}
 
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {
