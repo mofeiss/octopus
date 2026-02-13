@@ -47,19 +47,35 @@ func ChannelKeyUpdate(key model.ChannelKey) error {
 	if !ok {
 		return fmt.Errorf("channel not found")
 	}
-	if len(ch.Keys) > 0 {
-		keys := make([]model.ChannelKey, len(ch.Keys))
-		copy(keys, ch.Keys)
-		for i := range keys {
-			if keys[i].ID == key.ID {
-				keys[i] = key
-				break
-			}
-		}
-		ch.Keys = keys
+	if len(ch.Keys) == 0 {
+		return fmt.Errorf("channel key not found")
 	}
+
+	keys := make([]model.ChannelKey, len(ch.Keys))
+	copy(keys, ch.Keys)
+
+	found := false
+	var merged model.ChannelKey
+	for i := range keys {
+		if keys[i].ID != key.ID {
+			continue
+		}
+		// [fork] 仅允许运行时字段更新，避免 channel_key/remark/channel_id 被旧快照覆盖
+		keys[i].StatusCode = key.StatusCode
+		keys[i].LastUseTimeStamp = key.LastUseTimeStamp
+		keys[i].TotalCost = key.TotalCost
+		merged = keys[i]
+		found = true
+		break
+	}
+	if !found {
+		// [fork] key 已被删除或不再属于该渠道时拒绝写入，避免后续落库复活旧 key
+		return fmt.Errorf("channel key %d not found in channel %d", key.ID, key.ChannelID)
+	}
+
+	ch.Keys = keys
 	channelCache.Set(key.ChannelID, ch)
-	channelKeyCache.Set(key.ID, key)
+	channelKeyCache.Set(merged.ID, merged)
 	channelKeyCacheNeedUpdateLock.Lock()
 	channelKeyCacheNeedUpdate[key.ID] = struct{}{}
 	channelKeyCacheNeedUpdateLock.Unlock()
@@ -102,8 +118,16 @@ func ChannelKeySaveDB(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		if err := dbConn.Save(&k).Error; err != nil {
-			return err
+		// [fork] 仅落库运行时字段，禁止覆盖 channel_key/remark/channel_id 等配置字段
+		result := dbConn.Model(&model.ChannelKey{}).
+			Where("id = ? AND channel_id = ?", k.ID, k.ChannelID).
+			Updates(map[string]interface{}{
+				"status_code":         k.StatusCode,
+				"last_use_time_stamp": k.LastUseTimeStamp,
+				"total_cost":          k.TotalCost,
+			})
+		if result.Error != nil {
+			return result.Error
 		}
 	}
 	return nil
