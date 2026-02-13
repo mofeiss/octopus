@@ -2,6 +2,7 @@ package op
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/cache"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/xstrings"
+	"gorm.io/gorm"
 )
 
 var channelCache = cache.New[int, model.Channel](16)
@@ -35,20 +37,29 @@ func ChannelCreate(channel *model.Channel, ctx context.Context) error {
 			channelKeyCache.Set(k.ID, k)
 		}
 	}
+	// [fork] channel key audit
+	log.Infof("%s op=channel_create channel_id=%d channel_name=%q key_count=%d keys=%s",
+		channelKeyAuditPrefix, channel.ID, channel.Name, len(channel.Keys), summarizeKeysForAudit(channel.Keys))
 	return nil
 }
 
 // ChannelKeyUpdate 仅更新 ChannelKey 的内存缓存（不落库），并标记为需要在 SaveCache 时写入数据库。
 func ChannelKeyUpdate(key model.ChannelKey) error {
 	if key.ID == 0 || key.ChannelID == 0 {
-		return fmt.Errorf("invalid channel key")
+		err := fmt.Errorf("invalid channel key")
+		log.Warnf("%s op=runtime_update_invalid_key incoming=%s err=%v", channelKeyAuditPrefix, summarizeSingleKeyForAudit(key), err)
+		return err
 	}
 	ch, ok := channelCache.Get(key.ChannelID)
 	if !ok {
-		return fmt.Errorf("channel not found")
+		err := fmt.Errorf("channel not found")
+		log.Warnf("%s op=runtime_update_channel_not_found incoming=%s err=%v", channelKeyAuditPrefix, summarizeSingleKeyForAudit(key), err)
+		return err
 	}
 	if len(ch.Keys) == 0 {
-		return fmt.Errorf("channel key not found")
+		err := fmt.Errorf("channel key not found")
+		log.Warnf("%s op=runtime_update_no_keys channel_id=%d incoming=%s err=%v", channelKeyAuditPrefix, key.ChannelID, summarizeSingleKeyForAudit(key), err)
+		return err
 	}
 
 	keys := make([]model.ChannelKey, len(ch.Keys))
@@ -60,6 +71,19 @@ func ChannelKeyUpdate(key model.ChannelKey) error {
 		if keys[i].ID != key.ID {
 			continue
 		}
+		// [fork] channel key audit: detect stale runtime snapshot touching config fields
+		if key.ChannelKey != keys[i].ChannelKey {
+			log.Warnf("%s op=runtime_update_key_mismatch channel_id=%d key_id=%d incoming_key=%q stored_key=%q",
+				channelKeyAuditPrefix, key.ChannelID, key.ID, key.ChannelKey, keys[i].ChannelKey)
+		}
+		if key.Remark != keys[i].Remark {
+			log.Warnf("%s op=runtime_update_remark_mismatch channel_id=%d key_id=%d incoming_remark=%q stored_remark=%q",
+				channelKeyAuditPrefix, key.ChannelID, key.ID, key.Remark, keys[i].Remark)
+		}
+		if key.Enabled != keys[i].Enabled {
+			log.Warnf("%s op=runtime_update_enabled_mismatch channel_id=%d key_id=%d incoming_enabled=%t stored_enabled=%t",
+				channelKeyAuditPrefix, key.ChannelID, key.ID, key.Enabled, keys[i].Enabled)
+		}
 		// [fork] 仅允许运行时字段更新，避免 channel_key/remark/channel_id 被旧快照覆盖
 		keys[i].StatusCode = key.StatusCode
 		keys[i].LastUseTimeStamp = key.LastUseTimeStamp
@@ -70,7 +94,9 @@ func ChannelKeyUpdate(key model.ChannelKey) error {
 	}
 	if !found {
 		// [fork] key 已被删除或不再属于该渠道时拒绝写入，避免后续落库复活旧 key
-		return fmt.Errorf("channel key %d not found in channel %d", key.ID, key.ChannelID)
+		err := fmt.Errorf("channel key %d not found in channel %d", key.ID, key.ChannelID)
+		log.Warnf("%s op=runtime_update_missing_key incoming=%s err=%v", channelKeyAuditPrefix, summarizeSingleKeyForAudit(key), err)
+		return err
 	}
 
 	ch.Keys = keys
@@ -112,12 +138,38 @@ func ChannelKeySaveDB(ctx context.Context) error {
 		return nil
 	}
 
+	log.Infof("%s op=save_db_begin pending=%d", channelKeyAuditPrefix, len(keyIDs))
+	updatedCount := 0
+	skippedCount := 0
 	dbConn := db.GetDB().WithContext(ctx)
 	for _, id := range keyIDs {
 		k, ok := channelKeyCache.Get(id)
 		if !ok {
+			skippedCount++
+			log.Warnf("%s op=save_db_cache_miss key_id=%d", channelKeyAuditPrefix, id)
 			continue
 		}
+
+		// [fork] channel key audit: compare cache snapshot and DB config fields before runtime-field flush
+		var dbKey model.ChannelKey
+		if err := dbConn.Select("id", "channel_id", "channel_key", "remark").
+			Where("id = ?", k.ID).
+			First(&dbKey).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				skippedCount++
+				log.Warnf("%s op=save_db_missing_row cache={id=%d,cid=%d,key=%q,remark=%q}",
+					channelKeyAuditPrefix, k.ID, k.ChannelID, k.ChannelKey, k.Remark)
+				continue
+			}
+			return err
+		}
+		if dbKey.ChannelID != k.ChannelID || dbKey.ChannelKey != k.ChannelKey || dbKey.Remark != k.Remark {
+			log.Warnf("%s op=save_db_snapshot_mismatch key_id=%d db={id=%d,cid=%d,key=%q,remark=%q} cache={id=%d,cid=%d,key=%q,remark=%q}",
+				channelKeyAuditPrefix, k.ID,
+				dbKey.ID, dbKey.ChannelID, dbKey.ChannelKey, dbKey.Remark,
+				k.ID, k.ChannelID, k.ChannelKey, k.Remark)
+		}
+
 		// [fork] 仅落库运行时字段，禁止覆盖 channel_key/remark/channel_id 等配置字段
 		result := dbConn.Model(&model.ChannelKey{}).
 			Where("id = ? AND channel_id = ?", k.ID, k.ChannelID).
@@ -129,19 +181,34 @@ func ChannelKeySaveDB(ctx context.Context) error {
 		if result.Error != nil {
 			return result.Error
 		}
+		if result.RowsAffected == 0 {
+			skippedCount++
+			log.Warnf("%s op=save_db_no_rows_affected key_id=%d channel_id=%d", channelKeyAuditPrefix, k.ID, k.ChannelID)
+			continue
+		}
+		updatedCount++
 	}
+	log.Infof("%s op=save_db_end pending=%d updated=%d skipped=%d", channelKeyAuditPrefix, len(keyIDs), updatedCount, skippedCount)
 	return nil
 }
 
 func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model.Channel, error) {
-	_, ok := channelCache.Get(req.ID)
+	oldChannel, ok := channelCache.Get(req.ID)
 	if !ok {
 		return nil, fmt.Errorf("channel not found")
 	}
+	oldByID := make(map[int]model.ChannelKey, len(oldChannel.Keys))
+	for _, k := range oldChannel.Keys {
+		oldByID[k.ID] = k
+	}
+	// [fork] channel key audit
+	log.Infof("%s op=channel_update_begin channel_id=%d req=%s keys_before=%s",
+		channelKeyAuditPrefix, req.ID, summarizeChannelUpdateReqForAudit(req, oldByID), summarizeKeysForAudit(oldChannel.Keys))
 
 	tx := db.GetDB().WithContext(ctx).Begin()
 	defer func() {
 		if r := recover(); r != nil {
+			log.Warnf("%s op=channel_update_panic channel_id=%d panic=%v", channelKeyAuditPrefix, req.ID, r)
 			tx.Rollback()
 		}
 	}()
@@ -211,6 +278,7 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Channel{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {
 			tx.Rollback()
+			log.Warnf("%s op=channel_update_failed stage=update_channel channel_id=%d err=%v", channelKeyAuditPrefix, req.ID, err)
 			return nil, fmt.Errorf("failed to update channel: %w", err)
 		}
 	}
@@ -219,6 +287,7 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 	if len(req.KeysToDelete) > 0 {
 		if err := tx.Where("id IN ? AND channel_id = ?", req.KeysToDelete, req.ID).Delete(&model.ChannelKey{}).Error; err != nil {
 			tx.Rollback()
+			log.Warnf("%s op=channel_update_failed stage=delete_keys channel_id=%d err=%v", channelKeyAuditPrefix, req.ID, err)
 			return nil, fmt.Errorf("failed to delete channel keys: %w", err)
 		}
 	}
@@ -243,6 +312,7 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 				Where("id = ? AND channel_id = ?", ku.ID, req.ID).
 				Updates(updates).Error; err != nil {
 				tx.Rollback()
+				log.Warnf("%s op=channel_update_failed stage=update_key channel_id=%d key_id=%d err=%v", channelKeyAuditPrefix, req.ID, ku.ID, err)
 				return nil, fmt.Errorf("failed to update channel key %d: %w", ku.ID, err)
 			}
 		}
@@ -261,20 +331,29 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		}
 		if err := tx.Create(&newKeys).Error; err != nil {
 			tx.Rollback()
+			log.Warnf("%s op=channel_update_failed stage=create_keys channel_id=%d err=%v", channelKeyAuditPrefix, req.ID, err)
 			return nil, fmt.Errorf("failed to create channel keys: %w", err)
 		}
 	}
 
 	if err := tx.Commit().Error; err != nil {
+		log.Warnf("%s op=channel_update_failed stage=commit channel_id=%d err=%v", channelKeyAuditPrefix, req.ID, err)
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	// 刷新缓存并返回最新数据
 	if err := channelRefreshCacheByID(req.ID, ctx); err != nil {
+		log.Warnf("%s op=channel_update_failed stage=refresh_cache channel_id=%d err=%v", channelKeyAuditPrefix, req.ID, err)
 		return nil, err
 	}
 
-	channel, _ := channelCache.Get(req.ID)
+	channel, ok := channelCache.Get(req.ID)
+	if !ok {
+		err := fmt.Errorf("channel not found after refresh")
+		log.Warnf("%s op=channel_update_failed stage=post_refresh_get channel_id=%d err=%v", channelKeyAuditPrefix, req.ID, err)
+		return nil, err
+	}
+	log.Infof("%s op=channel_update_success channel_id=%d keys_after=%s", channelKeyAuditPrefix, channel.ID, summarizeKeysForAudit(channel.Keys))
 	return &channel, nil
 }
 
@@ -296,6 +375,9 @@ func ChannelDel(id int, ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("channel not found")
 	}
+	// [fork] channel key audit
+	log.Infof("%s op=channel_delete_begin channel_id=%d key_count=%d keys=%s",
+		channelKeyAuditPrefix, id, len(ch.Keys), summarizeKeysForAudit(ch.Keys))
 
 	// 开启事务
 	tx := db.GetDB().WithContext(ctx).Begin()
@@ -311,34 +393,40 @@ func ChannelDel(id int, ctx context.Context) error {
 		Where("channel_id = ?", id).
 		Pluck("group_id", &affectedGroupIDs).Error; err != nil {
 		tx.Rollback()
+		log.Warnf("%s op=channel_delete_failed stage=query_affected_groups channel_id=%d err=%v", channelKeyAuditPrefix, id, err)
 		return fmt.Errorf("failed to get affected groups: %w", err)
 	}
 
 	// 删除所有引用该渠道的 GroupItem
 	if err := tx.Where("channel_id = ?", id).Delete(&model.GroupItem{}).Error; err != nil {
 		tx.Rollback()
+		log.Warnf("%s op=channel_delete_failed stage=delete_group_items channel_id=%d err=%v", channelKeyAuditPrefix, id, err)
 		return fmt.Errorf("failed to delete group items: %w", err)
 	}
 
 	// 删除渠道 keys
 	if err := tx.Where("channel_id = ?", id).Delete(&model.ChannelKey{}).Error; err != nil {
 		tx.Rollback()
+		log.Warnf("%s op=channel_delete_failed stage=delete_keys channel_id=%d err=%v", channelKeyAuditPrefix, id, err)
 		return fmt.Errorf("failed to delete channel keys: %w", err)
 	}
 
 	// 删除统计数据
 	if err := tx.Where("channel_id = ?", id).Delete(&model.StatsChannel{}).Error; err != nil {
 		tx.Rollback()
+		log.Warnf("%s op=channel_delete_failed stage=delete_stats channel_id=%d err=%v", channelKeyAuditPrefix, id, err)
 		return fmt.Errorf("failed to delete channel stats: %w", err)
 	}
 
 	// 删除渠道
 	if err := tx.Delete(&model.Channel{}, id).Error; err != nil {
 		tx.Rollback()
+		log.Warnf("%s op=channel_delete_failed stage=delete_channel channel_id=%d err=%v", channelKeyAuditPrefix, id, err)
 		return fmt.Errorf("failed to delete channel: %w", err)
 	}
 
 	if err := tx.Commit().Error; err != nil {
+		log.Warnf("%s op=channel_delete_failed stage=commit channel_id=%d err=%v", channelKeyAuditPrefix, id, err)
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -358,6 +446,7 @@ func ChannelDel(id int, ctx context.Context) error {
 		}
 	}
 
+	log.Infof("%s op=channel_delete_success channel_id=%d deleted_key_count=%d", channelKeyAuditPrefix, id, len(ch.Keys))
 	return nil
 }
 
@@ -408,6 +497,9 @@ func channelRefreshCache(ctx context.Context) error {
 				channelKeyCache.Set(k.ID, k)
 			}
 		}
+		// [fork] channel key audit
+		log.Infof("%s op=cache_refresh channel_id=%d key_count=%d keys=%s",
+			channelKeyAuditPrefix, channel.ID, len(channel.Keys), summarizeKeysForAudit(channel.Keys))
 	}
 	return nil
 }
@@ -433,5 +525,8 @@ func channelRefreshCacheByID(id int, ctx context.Context) error {
 			channelKeyCache.Set(k.ID, k)
 		}
 	}
+	// [fork] channel key audit
+	log.Infof("%s op=cache_refresh_by_id channel_id=%d key_count=%d keys=%s",
+		channelKeyAuditPrefix, channel.ID, len(channel.Keys), summarizeKeysForAudit(channel.Keys))
 	return nil
 }
