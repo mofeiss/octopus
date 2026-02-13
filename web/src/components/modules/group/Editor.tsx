@@ -240,6 +240,15 @@ export function GroupEditor({
 
     const groupKey = normalizeKey(groupName);
     const regexKey = matchRegex.trim();
+    const defaultMatchKeys = useMemo(() => { // [fork] include group name + route aliases for default auto-add matching
+        const keys = new Set<string>();
+        if (groupKey) keys.add(groupKey);
+        routeAliases.split(',').forEach((alias) => {
+            const key = normalizeKey(alias);
+            if (key) keys.add(key);
+        });
+        return Array.from(keys);
+    }, [groupKey, routeAliases]);
 
     const { matchedModelChannels, regexError } = useMemo(() => {
         const parseRegex = (input: string): RegExp => {
@@ -261,9 +270,12 @@ export function GroupEditor({
                 return { matchedModelChannels: [], regexError: (e as Error)?.message ?? 'Invalid regex' };
             }
         }
-        if (!groupKey) return { matchedModelChannels: [], regexError: '' };
-        return { matchedModelChannels: modelChannels.filter((mc) => matchesGroupName(mc.name, groupKey)), regexError: '' };
-    }, [groupKey, regexKey, modelChannels]);
+        if (defaultMatchKeys.length === 0) return { matchedModelChannels: [], regexError: '' };
+        return { // [fork] default fuzzy match by group name or any route alias
+            matchedModelChannels: modelChannels.filter((mc) => defaultMatchKeys.some((key) => matchesGroupName(mc.name, key))),
+            regexError: '',
+        };
+    }, [defaultMatchKeys, regexKey, modelChannels]);
 
     const handleAddMember = useCallback((channel: LLMChannel) => {
         const key = memberKey(channel);
@@ -274,10 +286,10 @@ export function GroupEditor({
     }, []);
 
     const autoAddDisabled = useMemo(() => {
-        if ((!regexKey && !groupKey) || regexError || matchedModelChannels.length === 0) return true;
+        if ((!regexKey && defaultMatchKeys.length === 0) || regexError || matchedModelChannels.length === 0) return true; // [fork]
         const existing = new Set(selectedMembers.map((m) => m.id));
         return matchedModelChannels.every((mc) => existing.has(memberKey(mc)));
-    }, [groupKey, regexKey, regexError, matchedModelChannels, selectedMembers]);
+    }, [defaultMatchKeys, regexKey, regexError, matchedModelChannels, selectedMembers]);
 
     const handleAutoAdd = useCallback(() => {
         if (matchedModelChannels.length === 0) return;
@@ -518,4 +530,3 @@ export function GroupEditor({
         </form>
     );
 }
-

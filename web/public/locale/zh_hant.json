@@ -338,7 +338,7 @@
         "form": {
             "name": "分組名稱",
             "matchRegex": "匹配正規",
-            "matchRegexPlaceholder": "留空則預設按分組名稱模糊比對",
+            "matchRegexPlaceholder": "留空則預設按分組名稱/路由別名模糊比對",
             "matchRegexInvalid": "正規無效",
             "firstTokenTimeOut": "首字逾時",
             "firstTokenTimeOutHint": "單位秒，僅串流響應起效，0 表示不限制",

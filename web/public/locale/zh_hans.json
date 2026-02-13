@@ -338,7 +338,7 @@
         "form": {
             "name": "分组名称",
             "matchRegex": "匹配正则",
-            "matchRegexPlaceholder": "留空则默认按分组名称模糊匹配",
+            "matchRegexPlaceholder": "留空则默认按分组名称/路由别名模糊匹配",
             "matchRegexInvalid": "正则无效",
             "firstTokenTimeOut": "首字超时",
             "firstTokenTimeOutHint": "单位秒，仅流式响应起效，0 表示不限制",
