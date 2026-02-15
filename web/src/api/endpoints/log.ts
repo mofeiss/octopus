@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -54,6 +54,8 @@ export interface RelayLog {
     channel_key_preview?: string;
     channel_key_remark?: string;
     channel_key_index?: number;
+    // [fork] summary payload marker
+    content_omitted?: boolean;
 }
 
 export type LogScope = 'admin' | 'apikey';
@@ -66,6 +68,23 @@ export interface LogListParams {
     page_size?: number;
     start_time?: number;
     end_time?: number;
+}
+
+const logDetailQueryKey = (scope: LogScope, id: number) => ['log', 'detail', scope, id] as const;
+
+// [fork] fetch full log detail on demand
+export function useLogDetail(options: { id: number; scope?: LogScope; enabled?: boolean }) {
+    const { id, scope = 'admin', enabled = true } = options;
+    const logApiBase = scope === 'apikey' ? '/api/v1/apikey/log' : '/api/v1/log';
+
+    return useQuery({
+        queryKey: logDetailQueryKey(scope, id),
+        queryFn: async () => {
+            return apiClient.get<RelayLog>(`${logApiBase}/detail/${id}`);
+        },
+        enabled: enabled && id > 0,
+        staleTime: Infinity,
+    });
 }
 
 /**
@@ -125,6 +144,8 @@ export function useLogs(options: { pageSize?: number; scope?: LogScope } = {}) {
             const params = new URLSearchParams();
             params.set('page', String(pageParam));
             params.set('page_size', String(pageSize));
+            // [fork] fetch lightweight list payload, detail content is loaded on demand
+            params.set('include_content', 'false');
             const result = await apiClient.get<RelayLog[] | null>(`${logApiBase}/list?${params.toString()}`);
             return result ?? [];
         },

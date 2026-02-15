@@ -427,7 +427,9 @@
             "attempts": "次尝试",
             "success": "成功",
             "failed": "失败",
-            "user": "用户"
+            "user": "用户",
+            "loadingDetail": "正在加载日志详情...",
+            "detailLoadFailed": "日志详情加载失败"
         }
     },
     "channel": {

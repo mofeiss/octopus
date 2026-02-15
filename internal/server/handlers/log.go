@@ -22,6 +22,10 @@ func init() {
 				Handle(listLog),
 		).
 		AddRoute(
+			router.NewRoute("/detail/:id", http.MethodGet).
+				Handle(getLogDetail),
+		).
+		AddRoute(
 			router.NewRoute("/clear", http.MethodDelete).
 				Handle(clearLog),
 		).
@@ -41,6 +45,10 @@ func init() {
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
 				Handle(listAPIKeyLog),
+		).
+		AddRoute(
+			router.NewRoute("/detail/:id", http.MethodGet).
+				Handle(getAPIKeyLogDetail),
 		).
 		AddRoute(
 			router.NewRoute("/stream-token", http.MethodGet).
@@ -81,6 +89,19 @@ func parseLogListParams(c *gin.Context) (page int, pageSize int, startTime *int,
 	}
 
 	return page, pageSize, startTime, endTime, nil
+}
+
+// [fork] parse include_content flag, default true for backward compatibility
+func parseIncludeContent(c *gin.Context) (bool, error) {
+	raw := c.Query("include_content")
+	if raw == "" {
+		return true, nil
+	}
+	includeContent, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, err
+	}
+	return includeContent, nil
 }
 
 func matchLogScope(relayLog model.RelayLog, scope op.RelayLogStreamScope) bool {
@@ -144,8 +165,18 @@ func listLog(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	includeContent, err := parseIncludeContent(c)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
 
-	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, nil, nil)
+	var logs []model.RelayLog
+	if includeContent {
+		logs, err = op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, nil, nil)
+	} else {
+		logs, err = op.RelayLogListSummary(c.Request.Context(), startTime, endTime, page, pageSize, nil, nil)
+	}
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -175,21 +206,73 @@ func streamLog(c *gin.Context) {
 	streamLogWithScope(c, false)
 }
 
+// [fork] get full log detail by id
+func getLogDetail(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+
+	relayLog, err := op.RelayLogGetByID(c.Request.Context(), id, nil, nil)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if relayLog == nil {
+		resp.Error(c, http.StatusNotFound, resp.ErrResourceNotFound)
+		return
+	}
+	resp.Success(c, relayLog)
+}
+
 func listAPIKeyLog(c *gin.Context) {
 	page, pageSize, startTime, endTime, err := parseLogListParams(c)
 	if err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	includeContent, err := parseIncludeContent(c)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
 
 	apiKeyID := c.GetInt("api_key_id")
 	apiKeyName := c.GetString("api_key_name")
-	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, &apiKeyID, &apiKeyName)
+	var logs []model.RelayLog
+	if includeContent {
+		logs, err = op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, &apiKeyID, &apiKeyName)
+	} else {
+		logs, err = op.RelayLogListSummary(c.Request.Context(), startTime, endTime, page, pageSize, &apiKeyID, &apiKeyName)
+	}
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 	resp.Success(c, logs)
+}
+
+// [fork] get full apikey-scoped log detail by id
+func getAPIKeyLogDetail(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		return
+	}
+
+	apiKeyID := c.GetInt("api_key_id")
+	apiKeyName := c.GetString("api_key_name")
+	relayLog, err := op.RelayLogGetByID(c.Request.Context(), id, &apiKeyID, &apiKeyName)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if relayLog == nil {
+		resp.Error(c, http.StatusNotFound, resp.ErrResourceNotFound)
+		return
+	}
+	resp.Success(c, relayLog)
 }
 
 func getAPIKeyStreamToken(c *gin.Context) {

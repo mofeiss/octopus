@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/snowflake"
+	"gorm.io/gorm"
 )
 
 const relayLogMaxSize = 20
@@ -201,9 +203,23 @@ func matchRelayLogAPIKeyScope(log model.RelayLog, apiKeyID *int, apiKeyName *str
 	return log.APIKeyID == 0 && apiKeyName != nil && *apiKeyName != "" && log.APIKeyName == *apiKeyName
 }
 
-// RelayLogList 查询日志列表，支持可选的时间范围过滤
-// startTime 和 endTime 为 nil 时表示不限制时间范围
-func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize int, apiKeyID *int, apiKeyName *string) ([]model.RelayLog, error) {
+// [fork] build summary payload without heavy content
+func relayLogToSummary(relayLog model.RelayLog) model.RelayLog {
+	summary := relayLog
+	summary.RequestContent = ""
+	summary.ResponseContent = ""
+	summary.ContentOmitted = true
+	return summary
+}
+
+func relayLogListWithContentFlag(
+	ctx context.Context,
+	startTime, endTime *int,
+	page, pageSize int,
+	apiKeyID *int,
+	apiKeyName *string,
+	includeContent bool,
+) ([]model.RelayLog, error) {
 	enabled, err := SettingGetBool(model.SettingKeyRelayLogKeepEnabled)
 	if err != nil {
 		return nil, err
@@ -213,16 +229,19 @@ func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize i
 	// 获取缓存中符合条件的日志
 	relayLogCacheLock.Lock()
 	var cachedLogs []model.RelayLog
-	for _, log := range relayLogCache {
-		if !matchRelayLogAPIKeyScope(log, apiKeyID, apiKeyName) {
+	for _, relayLog := range relayLogCache {
+		if !matchRelayLogAPIKeyScope(relayLog, apiKeyID, apiKeyName) {
 			continue
 		}
 		if hasTimeFilter {
-			if log.Time >= int64(*startTime) && log.Time <= int64(*endTime) {
-				cachedLogs = append(cachedLogs, log)
+			if relayLog.Time < int64(*startTime) || relayLog.Time > int64(*endTime) {
+				continue
 			}
+		}
+		if includeContent {
+			cachedLogs = append(cachedLogs, relayLog)
 		} else {
-			cachedLogs = append(cachedLogs, log)
+			cachedLogs = append(cachedLogs, relayLogToSummary(relayLog))
 		}
 	}
 	relayLogCacheLock.Unlock()
@@ -266,16 +285,70 @@ func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize i
 					query = query.Where("api_key_id = ?", *apiKeyID)
 				}
 			}
+			if !includeContent {
+				query = query.Omit("request_content", "response_content")
+			}
 
 			var dbLogs []model.RelayLog
 			if err := query.Order("id DESC").Offset(dbOffset).Limit(remaining).Find(&dbLogs).Error; err != nil {
 				return nil, err
+			}
+			if !includeContent {
+				for i := range dbLogs {
+					dbLogs[i].ContentOmitted = true
+				}
 			}
 			result = append(result, dbLogs...)
 		}
 	}
 
 	return result, nil
+}
+
+// RelayLogList 查询日志列表，支持可选的时间范围过滤
+// startTime 和 endTime 为 nil 时表示不限制时间范围
+func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize int, apiKeyID *int, apiKeyName *string) ([]model.RelayLog, error) {
+	return relayLogListWithContentFlag(ctx, startTime, endTime, page, pageSize, apiKeyID, apiKeyName, true)
+}
+
+// [fork] RelayLogListSummary 查询不包含 request/response 正文的摘要日志
+func RelayLogListSummary(ctx context.Context, startTime, endTime *int, page, pageSize int, apiKeyID *int, apiKeyName *string) ([]model.RelayLog, error) {
+	return relayLogListWithContentFlag(ctx, startTime, endTime, page, pageSize, apiKeyID, apiKeyName, false)
+}
+
+// [fork] RelayLogGetByID returns full log content for detail view with scope guard
+func RelayLogGetByID(ctx context.Context, id int64, apiKeyID *int, apiKeyName *string) (*model.RelayLog, error) {
+	relayLogCacheLock.Lock()
+	for i := len(relayLogCache) - 1; i >= 0; i-- {
+		if relayLogCache[i].ID != id {
+			continue
+		}
+		if !matchRelayLogAPIKeyScope(relayLogCache[i], apiKeyID, apiKeyName) {
+			continue
+		}
+		cached := relayLogCache[i]
+		relayLogCacheLock.Unlock()
+		return &cached, nil
+	}
+	relayLogCacheLock.Unlock()
+
+	query := db.GetDB().WithContext(ctx).Where("id = ?", id)
+	if apiKeyID != nil && *apiKeyID > 0 {
+		if apiKeyName != nil && *apiKeyName != "" {
+			query = query.Where("(api_key_id = ? OR (api_key_id = 0 AND api_key_name = ?))", *apiKeyID, *apiKeyName)
+		} else {
+			query = query.Where("api_key_id = ?", *apiKeyID)
+		}
+	}
+
+	var relayLog model.RelayLog
+	if err := query.First(&relayLog).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &relayLog, nil
 }
 
 func RelayLogClear(ctx context.Context) error {

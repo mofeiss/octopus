@@ -8,7 +8,7 @@ import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
 import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from 'next-themes';
-import { type RelayLog, type ChannelAttempt } from '@/api/endpoints/log';
+import { type RelayLog, type ChannelAttempt, type LogScope, useLogDetail } from '@/api/endpoints/log';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -184,7 +184,72 @@ function DeferredJsonContent({ content, fallbackText }: { content: string | unde
     );
 }
 
-export function LogCard({ log }: { log: RelayLog }) {
+function LogContentPanels({ log, scope }: { log: RelayLog; scope: LogScope }) {
+    const t = useTranslations('log.card');
+    const { isOpen } = useMorphingDialog();
+    const shouldFetchDetail = isOpen && !!log.content_omitted;
+    const detailQuery = useLogDetail({ id: log.id, scope, enabled: shouldFetchDetail });
+
+    const requestContent = detailQuery.data?.request_content ?? log.request_content;
+    const responseContent = detailQuery.data?.response_content ?? log.response_content;
+    const isDetailLoading = shouldFetchDetail && detailQuery.isLoading && !detailQuery.data;
+    const isDetailLoadFailed = shouldFetchDetail && !detailQuery.data && !!detailQuery.error;
+
+    return (
+        <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
+                <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+                    <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
+                        <Send className="size-4 text-green-500" />
+                        <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
+                        <Badge variant="secondary" className="ml-auto text-xs">
+                            {log.input_tokens.toLocaleString()} {t('tokens')}
+                        </Badge>
+                    </div>
+                    <div className="flex-1 overflow-auto min-h-0">
+                        {isDetailLoading ? (
+                            <div className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>{t('loadingDetail')}</span>
+                            </div>
+                        ) : isDetailLoadFailed ? (
+                            <pre className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed">
+                                {t('detailLoadFailed')}
+                            </pre>
+                        ) : (
+                            <DeferredJsonContent content={requestContent} fallbackText={t('noRequestContent')} />
+                        )}
+                    </div>
+                </div>
+                <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+                    <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
+                        <MessageSquare className="size-4 text-purple-500" />
+                        <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
+                        <Badge variant="secondary" className="ml-auto text-xs">
+                            {log.output_tokens.toLocaleString()} {t('tokens')}
+                        </Badge>
+                    </div>
+                    <div className="flex-1 overflow-auto min-h-0">
+                        {isDetailLoading ? (
+                            <div className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>{t('loadingDetail')}</span>
+                            </div>
+                        ) : isDetailLoadFailed ? (
+                            <pre className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed">
+                                {t('detailLoadFailed')}
+                            </pre>
+                        ) : (
+                            <DeferredJsonContent content={responseContent} fallbackText={t('noResponseContent')} />
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export function LogCard({ log, scope = 'admin' }: { log: RelayLog; scope?: LogScope }) {
     const t = useTranslations('log.card');
     const { Avatar: ModelAvatar, color: brandColor } = useMemo(
         () => getModelIcon(log.actual_model_name),
@@ -485,34 +550,7 @@ export function LogCard({ log }: { log: RelayLog }) {
                                         </AnimatePresence>
                                     </div>
                                 )}
-                                <div className="flex-1 min-h-0 overflow-hidden">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
-                                        <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
-                                            <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                                                <Send className="size-4 text-green-500" />
-                                                <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
-                                                <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.input_tokens.toLocaleString()} {t('tokens')}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex-1 overflow-auto min-h-0">
-                                                <DeferredJsonContent content={log.request_content} fallbackText={t('noRequestContent')} />
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
-                                            <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                                                <MessageSquare className="size-4 text-purple-500" />
-                                                <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
-                                                <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.output_tokens.toLocaleString()} {t('tokens')}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex-1 overflow-auto min-h-0">
-                                                <DeferredJsonContent content={log.response_content} fallbackText={t('noResponseContent')} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <LogContentPanels log={log} scope={scope} />
                             </div>
                         </MorphingDialogDescription>
 

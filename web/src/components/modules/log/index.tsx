@@ -96,10 +96,10 @@ export function Log({ scope = 'admin' }: { scope?: LogScope }) {
                 );
             }
 
-            items.push(<LogCard key={`log-${log.id}`} log={log} />);
+            items.push(<LogCard key={`log-${log.id}`} log={log} scope={scope} />);
             return items;
         });
-    }, [locale, segmentedLogs, t]);
+    }, [locale, scope, segmentedLogs, t]);
 
     return (
         <PageWrapper className="grid grid-cols-1 gap-4">

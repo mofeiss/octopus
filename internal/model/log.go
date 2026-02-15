@@ -50,4 +50,6 @@ type RelayLog struct {
 	ChannelKeyPreview string `json:"channel_key_preview" gorm:"default:''"` // masked channel key
 	ChannelKeyRemark  string `json:"channel_key_remark" gorm:"default:''"`  // channel key remark
 	ChannelKeyIndex   int    `json:"channel_key_index" gorm:"default:0"`    // 1-based index in channel
+	// [fork] summary payload marker
+	ContentOmitted bool `json:"content_omitted,omitempty" gorm:"-"`
 }

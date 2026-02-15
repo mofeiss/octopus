@@ -427,7 +427,9 @@
             "attempts": "attempts",
             "success": "Success",
             "failed": "Failed",
-            "user": "User"
+            "user": "User",
+            "loadingDetail": "Loading detail...",
+            "detailLoadFailed": "Failed to load log detail"
         }
     },
     "channel": {
