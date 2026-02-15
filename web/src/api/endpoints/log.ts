@@ -1,4 +1,4 @@
-import type { InfiniteData } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
@@ -26,6 +26,13 @@ export interface ChannelAttempt {
     channel_key_index?: number;
     channel_key_preview?: string;
     channel_key_remark?: string;
+}
+
+// [fork] parsed log content cache payload
+export interface ParsedLogContent {
+    source: string;
+    isJson: boolean;
+    data: unknown;
 }
 
 /**
@@ -56,6 +63,9 @@ export interface RelayLog {
     channel_key_index?: number;
     // [fork] summary payload marker
     content_omitted?: boolean;
+    // [fork] parsed content cache for instant detail render
+    parsed_request_content?: ParsedLogContent;
+    parsed_response_content?: ParsedLogContent;
 }
 
 export type LogScope = 'admin' | 'apikey';
@@ -70,18 +80,58 @@ export interface LogListParams {
     end_time?: number;
 }
 
-const logDetailQueryKey = (scope: LogScope, id: number) => ['log', 'detail', scope, id] as const;
+const logApiBaseByScope = (scope: LogScope) => scope === 'apikey' ? '/api/v1/apikey/log' : '/api/v1/log';
+
+// [fork] shared detail query key for on-demand and prefetch
+export const logDetailQueryKey = (scope: LogScope, id: number) => ['log', 'detail', scope, id] as const;
+
+// [fork] shared detail query fn
+export function fetchLogDetail(scope: LogScope, id: number): Promise<RelayLog> {
+    return apiClient.get<RelayLog>(`${logApiBaseByScope(scope)}/detail/${id}`);
+}
+
+function parseLogContent(content: string): ParsedLogContent {
+    try {
+        return { source: content, isJson: true, data: JSON.parse(content) };
+    } catch {
+        return { source: content, isJson: false, data: content };
+    }
+}
+
+// [fork] hydrate raw detail with parsed request/response payload
+export function hydrateLogDetail(detail: RelayLog): RelayLog {
+    const hydrated: RelayLog = { ...detail };
+
+    if (detail.request_content && !detail.parsed_request_content) {
+        hydrated.parsed_request_content = parseLogContent(detail.request_content);
+    }
+    if (detail.response_content && !detail.parsed_response_content) {
+        hydrated.parsed_response_content = parseLogContent(detail.response_content);
+    }
+
+    return hydrated;
+}
+
+// [fork] prefetch full log detail for better open latency
+export async function prefetchLogDetail(queryClient: QueryClient, scope: LogScope, id: number) {
+    if (id <= 0) return Promise.resolve(undefined);
+    const detail = await queryClient.fetchQuery({
+        queryKey: logDetailQueryKey(scope, id),
+        queryFn: () => fetchLogDetail(scope, id),
+        staleTime: Infinity,
+    });
+    const hydrated = hydrateLogDetail(detail);
+    queryClient.setQueryData(logDetailQueryKey(scope, id), hydrated);
+    return hydrated;
+}
 
 // [fork] fetch full log detail on demand
 export function useLogDetail(options: { id: number; scope?: LogScope; enabled?: boolean }) {
     const { id, scope = 'admin', enabled = true } = options;
-    const logApiBase = scope === 'apikey' ? '/api/v1/apikey/log' : '/api/v1/log';
 
     return useQuery({
         queryKey: logDetailQueryKey(scope, id),
-        queryFn: async () => {
-            return apiClient.get<RelayLog>(`${logApiBase}/detail/${id}`);
-        },
+        queryFn: async () => hydrateLogDetail(await fetchLogDetail(scope, id)),
         enabled: enabled && id > 0,
         staleTime: Infinity,
     });
@@ -129,7 +179,7 @@ const logsInfiniteQueryKey = (scope: LogScope, pageSize: number) => ['logs', sco
  */
 export function useLogs(options: { pageSize?: number; scope?: LogScope } = {}) {
     const { pageSize = 20, scope = 'admin' } = options;
-    const logApiBase = scope === 'apikey' ? '/api/v1/apikey/log' : '/api/v1/log';
+    const logApiBase = logApiBaseByScope(scope);
 
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);

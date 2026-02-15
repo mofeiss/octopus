@@ -23,7 +23,9 @@ import useClickOutside from '@/hooks/useClickOutside';
 
 export type MorphingDialogContextType = {
   isOpen: boolean;
+  isTransitioning: boolean;
   setIsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setIsTransitioning: React.Dispatch<React.SetStateAction<boolean>>;
   uniqueId: string;
   triggerRef: React.RefObject<HTMLDivElement | null>;
 };
@@ -51,17 +53,20 @@ function MorphingDialogProvider({
   transition,
 }: MorphingDialogProviderProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const uniqueId = useId();
   const triggerRef = useRef<HTMLDivElement>(null!);
 
   const contextValue = useMemo(
     () => ({
       isOpen,
+      isTransitioning,
       setIsOpen,
+      setIsTransitioning,
       uniqueId,
       triggerRef,
     }),
-    [isOpen, uniqueId]
+    [isOpen, isTransitioning, uniqueId]
   );
 
   return (
@@ -97,20 +102,28 @@ function MorphingDialogTrigger({
   style,
   triggerRef: triggerRefProp,
 }: MorphingDialogTriggerProps) {
-  const { setIsOpen, isOpen, uniqueId, triggerRef } = useMorphingDialog();
+  const { setIsOpen, isOpen, setIsTransitioning, uniqueId, triggerRef } = useMorphingDialog();
+
+  const beginTransition = useCallback(() => {
+    if (isOpen) return;
+    setIsTransitioning(true);
+    window.setTimeout(() => setIsTransitioning(false), 600);
+  }, [isOpen, setIsTransitioning]);
 
   const handleClick = useCallback(() => {
+    beginTransition();
     setIsOpen(!isOpen);
-  }, [isOpen, setIsOpen]);
+  }, [beginTransition, isOpen, setIsOpen]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
+        beginTransition();
         setIsOpen(!isOpen);
       }
     },
-    [isOpen, setIsOpen]
+    [beginTransition, isOpen, setIsOpen]
   );
 
   // Important: when dialog is open, framer-motion shared-layout can temporarily
@@ -161,7 +174,7 @@ function MorphingDialogContent({
   className,
   style,
 }: MorphingDialogContentProps) {
-  const { setIsOpen, isOpen, uniqueId, triggerRef } = useMorphingDialog();
+  const { setIsOpen, isOpen, setIsTransitioning, uniqueId, triggerRef } = useMorphingDialog();
   const containerRef = useRef<HTMLDivElement>(null!);
   const firstFocusableElementRef = useRef<HTMLElement | null>(null);
   const lastFocusableElementRef = useRef<HTMLElement | null>(null);
@@ -245,6 +258,11 @@ function MorphingDialogContent({
       layoutId={`dialog-${uniqueId}`}
       className={cn('overflow-hidden', className)}
       style={style}
+      onLayoutAnimationComplete={() => {
+        if (isOpen) {
+          setIsTransitioning(false);
+        }
+      }}
       role='dialog'
       aria-modal='true'
       aria-labelledby={`motion-ui-morphing-dialog-title-${uniqueId}`}

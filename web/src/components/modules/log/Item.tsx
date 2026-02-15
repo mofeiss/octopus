@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,7 +8,7 @@ import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
 import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from 'next-themes';
-import { type RelayLog, type ChannelAttempt, type LogScope, useLogDetail } from '@/api/endpoints/log';
+import { type RelayLog, type ChannelAttempt, type LogScope, type ParsedLogContent, useLogDetail } from '@/api/endpoints/log';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -99,29 +99,47 @@ function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadge
     );
 }
 
-function DeferredJsonContent({ content, fallbackText }: { content: string | undefined; fallbackText: string }) {
+function DeferredJsonContent({
+    content,
+    parsedContent,
+    fallbackText
+}: {
+    content: string | undefined;
+    parsedContent?: ParsedLogContent;
+    fallbackText: string;
+}) {
     const { resolvedTheme } = useTheme();
-    const { isOpen } = useMorphingDialog();
-    const [shouldRender, setShouldRender] = useState(false);
-
-    const parsed = useMemo(() => {
-        if (!content) return { isJson: false, data: null };
-        try {
-            return { isJson: true, data: JSON.parse(content) };
-        } catch {
-            return { isJson: false, data: content };
-        }
-    }, [content]);
+    const { isOpen, isTransitioning } = useMorphingDialog();
+    const [parsedState, setParsedState] = useState<{ source: string; isJson: boolean; data: unknown }>({
+        source: '',
+        isJson: false,
+        data: null,
+    });
+    const hasCachedParsedForCurrent = !!content && !!parsedContent && parsedContent.source === content;
 
     useEffect(() => {
-        if (isOpen) {
-            const timer = setTimeout(() => setShouldRender(true), 300);
-            return () => clearTimeout(timer);
-        }
-    }, [isOpen]);
+        if (!isOpen || isTransitioning || !content || hasCachedParsedForCurrent) return;
+
+        let cancelled = false;
+        let timeoutId: number | null = null;
+        timeoutId = window.setTimeout(() => {
+            if (cancelled) return;
+            try {
+                setParsedState({ source: content, isJson: true, data: JSON.parse(content) });
+            } catch {
+                setParsedState({ source: content, isJson: false, data: content });
+            }
+        }, 0);
+
+        return () => {
+            cancelled = true;
+            if (timeoutId !== null) {
+                window.clearTimeout(timeoutId);
+            }
+        };
+    }, [content, hasCachedParsedForCurrent, isOpen, isTransitioning]);
 
     if (!isOpen) {
-        if (shouldRender) setShouldRender(false);
         return null;
     }
 
@@ -133,67 +151,87 @@ function DeferredJsonContent({ content, fallbackText }: { content: string | unde
         );
     }
 
+    const effectiveParsed = hasCachedParsedForCurrent
+        ? parsedContent
+        : (parsedState.source === content ? parsedState : null);
+    const isLoadingVisual = isTransitioning || !effectiveParsed;
+
     return (
-        <AnimatePresence mode="wait">
-            {!shouldRender ? (
-                <motion.div
-                    key="loading"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className="p-4 flex items-center justify-center h-full"
-                >
-                    <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
-                </motion.div>
-            ) : parsed.isJson ? (
-                <motion.div
-                    key="json"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="p-4"
-                >
-                    <JsonView
-                        value={parsed.data as object}
-                        style={{
-                            ...(resolvedTheme === 'dark' ? githubDarkTheme : githubLightTheme),
-                            fontSize: '12px',
-                            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-                            backgroundColor: 'transparent',
-                        }}
-                        displayDataTypes={false}
-                        displayObjectSize={false}
-                        collapsed={false}
-                    />
-                </motion.div>
-            ) : (
-                <motion.pre
-                    key="text"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="p-4 text-xs text-muted-foreground whitespace-pre-wrap wrap-break-word font-mono leading-relaxed"
-                >
-                    {content}
-                </motion.pre>
-            )}
-        </AnimatePresence>
+        <div className="relative h-full">
+            <AnimatePresence initial={false} mode="sync">
+                {!isLoadingVisual && (
+                    effectiveParsed.isJson ? (
+                        <motion.div
+                            key="deferred-json"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="p-4"
+                        >
+                            <JsonView
+                                value={effectiveParsed.data as object}
+                                style={{
+                                    ...(resolvedTheme === 'dark' ? githubDarkTheme : githubLightTheme),
+                                    fontSize: '12px',
+                                    fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                                    backgroundColor: 'transparent',
+                                }}
+                                displayDataTypes={false}
+                                displayObjectSize={false}
+                                collapsed={false}
+                            />
+                        </motion.div>
+                    ) : (
+                        <motion.pre
+                            key="deferred-text"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="p-4 text-xs text-muted-foreground whitespace-pre-wrap wrap-break-word font-mono leading-relaxed"
+                        >
+                            {(effectiveParsed.data as string) ?? content}
+                        </motion.pre>
+                    )
+                )}
+                {isLoadingVisual && (
+                    <motion.div
+                        key="deferred-loading"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute inset-0 p-4 flex items-center justify-center"
+                    >
+                        <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }
 
-function LogContentPanels({ log, scope }: { log: RelayLog; scope: LogScope }) {
+function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: LogScope; onOpenLog?: (id: number) => void }) {
     const t = useTranslations('log.card');
     const { isOpen } = useMorphingDialog();
+    const openStateRef = useRef(false);
     const shouldFetchDetail = isOpen && !!log.content_omitted;
     const detailQuery = useLogDetail({ id: log.id, scope, enabled: shouldFetchDetail });
 
     const requestContent = detailQuery.data?.request_content ?? log.request_content;
     const responseContent = detailQuery.data?.response_content ?? log.response_content;
+    const requestParsedContent = detailQuery.data?.parsed_request_content ?? log.parsed_request_content;
+    const responseParsedContent = detailQuery.data?.parsed_response_content ?? log.parsed_response_content;
     const isDetailLoading = shouldFetchDetail && detailQuery.isLoading && !detailQuery.data;
     const isDetailLoadFailed = shouldFetchDetail && !detailQuery.data && !!detailQuery.error;
+
+    useEffect(() => {
+        if (isOpen && !openStateRef.current) {
+            onOpenLog?.(log.id);
+        }
+        openStateRef.current = isOpen;
+    }, [isOpen, log.id, onOpenLog]);
 
     return (
         <div className="flex-1 min-h-0 overflow-hidden">
@@ -207,18 +245,47 @@ function LogContentPanels({ log, scope }: { log: RelayLog; scope: LogScope }) {
                         </Badge>
                     </div>
                     <div className="flex-1 overflow-auto min-h-0">
-                        {isDetailLoading ? (
-                            <div className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                <span>{t('loadingDetail')}</span>
-                            </div>
-                        ) : isDetailLoadFailed ? (
-                            <pre className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed">
-                                {t('detailLoadFailed')}
-                            </pre>
-                        ) : (
-                            <DeferredJsonContent content={requestContent} fallbackText={t('noRequestContent')} />
-                        )}
+                        <AnimatePresence initial={false} mode="sync">
+                            {isDetailLoading ? (
+                                <motion.div
+                                    key={`request-loading-${log.id}`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2"
+                                >
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>{t('loadingDetail')}</span>
+                                </motion.div>
+                            ) : isDetailLoadFailed ? (
+                                <motion.pre
+                                    key={`request-failed-${log.id}`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed"
+                                >
+                                    {t('detailLoadFailed')}
+                                </motion.pre>
+                            ) : (
+                                <motion.div
+                                    key={`request-content-${log.id}`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="h-full"
+                                >
+                                    <DeferredJsonContent
+                                        content={requestContent}
+                                        parsedContent={requestParsedContent}
+                                        fallbackText={t('noRequestContent')}
+                                    />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
                 <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
@@ -230,18 +297,47 @@ function LogContentPanels({ log, scope }: { log: RelayLog; scope: LogScope }) {
                         </Badge>
                     </div>
                     <div className="flex-1 overflow-auto min-h-0">
-                        {isDetailLoading ? (
-                            <div className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                <span>{t('loadingDetail')}</span>
-                            </div>
-                        ) : isDetailLoadFailed ? (
-                            <pre className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed">
-                                {t('detailLoadFailed')}
-                            </pre>
-                        ) : (
-                            <DeferredJsonContent content={responseContent} fallbackText={t('noResponseContent')} />
-                        )}
+                        <AnimatePresence initial={false} mode="sync">
+                            {isDetailLoading ? (
+                                <motion.div
+                                    key={`response-loading-${log.id}`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2"
+                                >
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>{t('loadingDetail')}</span>
+                                </motion.div>
+                            ) : isDetailLoadFailed ? (
+                                <motion.pre
+                                    key={`response-failed-${log.id}`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed"
+                                >
+                                    {t('detailLoadFailed')}
+                                </motion.pre>
+                            ) : (
+                                <motion.div
+                                    key={`response-content-${log.id}`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="h-full"
+                                >
+                                    <DeferredJsonContent
+                                        content={responseContent}
+                                        parsedContent={responseParsedContent}
+                                        fallbackText={t('noResponseContent')}
+                                    />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>
@@ -249,7 +345,7 @@ function LogContentPanels({ log, scope }: { log: RelayLog; scope: LogScope }) {
     );
 }
 
-export function LogCard({ log, scope = 'admin' }: { log: RelayLog; scope?: LogScope }) {
+export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; scope?: LogScope; onOpenLog?: (id: number) => void }) {
     const t = useTranslations('log.card');
     const { Avatar: ModelAvatar, color: brandColor } = useMemo(
         () => getModelIcon(log.actual_model_name),
@@ -550,7 +646,7 @@ export function LogCard({ log, scope = 'admin' }: { log: RelayLog; scope?: LogSc
                                         </AnimatePresence>
                                     </div>
                                 )}
-                                <LogContentPanels log={log} scope={scope} />
+                                <LogContentPanels log={log} scope={scope} onOpenLog={onOpenLog} />
                             </div>
                         </MorphingDialogDescription>
 
