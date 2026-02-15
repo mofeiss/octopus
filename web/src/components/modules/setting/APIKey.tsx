@@ -461,6 +461,21 @@ function APIKeyStatsCard({
     );
 }
 
+function APIKeyFormBackdrop({ onClose }: { onClose: () => void }) {
+    return (
+        <motion.button
+            type="button"
+            // [fork] Add blur backdrop for API key form overlays and close on backdrop click.
+            className="fixed inset-0 z-[55] bg-white/40 backdrop-blur-xs dark:bg-black/40"
+            aria-label="Close API key form"
+            onClick={onClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+        />
+    );
+}
+
 function APIKeyKeyItem({
     apiKey,
     statsLayoutId,
@@ -667,13 +682,16 @@ function APIKeyPanelBase({
 
             <AnimatePresence>
                 {isAdding && (
-                    <APIKeyFormOverlay
-                        layoutId={addLayoutId}
-                        isPending={createAPIKey.isPending}
-                        submitLabel={t('apiKey.form.create')}
-                        onSubmit={handleCreate}
-                        onClose={() => setIsAdding(false)}
-                    />
+                    <>
+                        <APIKeyFormBackdrop onClose={() => setIsAdding(false)} />
+                        <APIKeyFormOverlay
+                            layoutId={addLayoutId}
+                            isPending={createAPIKey.isPending}
+                            submitLabel={t('apiKey.form.create')}
+                            onSubmit={handleCreate}
+                            onClose={() => setIsAdding(false)}
+                        />
+                    </>
                 )}
             </AnimatePresence>
 
@@ -689,14 +707,17 @@ function APIKeyPanelBase({
 
             <AnimatePresence>
                 {editingKey && (
-                    <APIKeyFormOverlay
-                        layoutId={editingKey.layoutId}
-                        apiKey={editingKey.apiKey}
-                        isPending={updateAPIKey.isPending}
-                        submitLabel={t('apiKey.form.save')}
-                        onSubmit={(data) => handleUpdate(editingKey.apiKey, data)}
-                        onClose={() => setEditingKey(null)}
-                    />
+                    <>
+                        <APIKeyFormBackdrop onClose={() => setEditingKey(null)} />
+                        <APIKeyFormOverlay
+                            layoutId={editingKey.layoutId}
+                            apiKey={editingKey.apiKey}
+                            isPending={updateAPIKey.isPending}
+                            submitLabel={t('apiKey.form.save')}
+                            onSubmit={(data) => handleUpdate(editingKey.apiKey, data)}
+                            onClose={() => setEditingKey(null)}
+                        />
+                    </>
                 )}
             </AnimatePresence>
 
