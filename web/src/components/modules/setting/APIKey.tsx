@@ -362,7 +362,8 @@ function APIKeyFormOverlay({
     return (
         <motion.div
             layoutId={layoutId}
-            className="absolute left-1/2 top-1/2 z-20 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 bg-card p-5 rounded-3xl border border-border custom-shadow max-h-[80vh] overflow-auto"
+            // [fork] Anchor form overlays to the viewport to avoid clipping in short setting cards.
+            className="fixed left-1/2 top-1/2 z-[60] w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 bg-card p-5 rounded-3xl border border-border custom-shadow max-h-[80vh] overflow-auto"
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
         >
             <APIKeyForm
