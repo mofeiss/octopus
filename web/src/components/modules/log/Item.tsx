@@ -352,8 +352,14 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
         [log.actual_model_name]
     );
 
+    // [fork] 过滤掉被手动禁用的渠道记录
+    const filteredAttempts = useMemo(() => {
+        if (!log.attempts) return [];
+        return log.attempts.filter(attempt => attempt.msg !== 'group item disabled');
+    }, [log.attempts]);
+
     const hasError = !!log.error;
-    const hasMultipleAttempts = log.attempts && log.attempts.length > 1;
+    const hasMultipleAttempts = filteredAttempts.length > 1;
     const [isDiagnosticExpanded, setIsDiagnosticExpanded] = useState(true);
 
     return (
@@ -378,7 +384,7 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                                     <RetryBadgeWithTooltip
                                         channelName={log.channel_name}
                                         brandColor={brandColor}
-                                        attempts={log.attempts!}
+                                        attempts={filteredAttempts}
                                     />
                                 ) : (
                                     <Badge
@@ -414,7 +420,7 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                                         </span>
                                     </>
                                 )}
-                                {log.attempts?.some(a => a.sticky) && (
+                                {filteredAttempts.some(a => a.sticky) && (
                                     <Pin className="size-3.5 shrink-0 text-amber-500" />
                                 )}
                             </div>
@@ -473,7 +479,7 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                                 <RetryBadgeWithTooltip
                                     channelName={log.channel_name}
                                     brandColor={brandColor}
-                                    attempts={log.attempts!}
+                                    attempts={filteredAttempts}
                                 />
                             ) : (
                                 <Badge
@@ -507,7 +513,7 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                                     </span>
                                 </>
                             )}
-                            {log.attempts?.some(a => a.sticky) && (
+                            {filteredAttempts.some(a => a.sticky) && (
                                 <Pin className="size-3.5 shrink-0 text-amber-500" />
                             )}
                         </MorphingDialogTitle>
@@ -550,7 +556,7 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                                                                 : "bg-secondary text-secondary-foreground"
                                                         )}
                                                     >
-                                                        {log.total_attempts || log.attempts!.length} {t('attempts')}
+                                                        {filteredAttempts.length} {t('attempts')}
                                                     </Badge>
                                                 )}
                                                 {isDiagnosticExpanded ? (
@@ -589,7 +595,7 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
 
                                                         {hasMultipleAttempts && (
                                                             <div className="flex flex-col gap-2">
-                                                                {log.attempts!.map((attempt, idx) => (
+                                                                {filteredAttempts.map((attempt, idx) => (
                                                                     <div
                                                                         key={idx}
                                                                         className={cn(

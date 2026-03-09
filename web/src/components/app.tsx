@@ -9,7 +9,7 @@ import { APIKeyDashboard } from '@/components/modules/apikey-dashboard';
 import { ContentLoader } from '@/route/content-loader';
 import { NavBar, useNavStore } from '@/components/modules/navbar';
 import { useTranslations } from 'next-intl'
-import Logo, { LOGO_DRAW_END_MS } from '@/components/modules/logo';
+import Logo from '@/components/modules/logo';
 import { Toolbar } from '@/components/modules/toolbar';
 import { ENTRANCE_VARIANTS } from '@/lib/animations/fluid-transitions';
 import { useQueryClient } from '@tanstack/react-query';
@@ -28,7 +28,8 @@ export function AppContainer() {
     const queryClient = useQueryClient();
 
     // Logo 动画完成状态
-    const [logoAnimationComplete, setLogoAnimationComplete] = useState(false);
+    // [fork] 跳过 Logo 动画，直接标记为完成
+    const logoAnimationComplete = true;
     const [bootstrapComplete, setBootstrapComplete] = useState(false);
     const bootstrapStartedRef = useRef(false);
 
@@ -42,10 +43,11 @@ export function AppContainer() {
         return () => clearTimeout(timer);
     }, []);
 
-    useEffect(() => {
-        const timer = setTimeout(() => setLogoAnimationComplete(true), LOGO_DRAW_END_MS);
-        return () => clearTimeout(timer);
-    }, []);
+    // [fork] 跳过 Logo 动画计时器
+    // useEffect(() => {
+    //     const timer = setTimeout(() => setLogoAnimationComplete(true), LOGO_DRAW_END_MS);
+    //     return () => clearTimeout(timer);
+    // }, []);
 
     useEffect(() => {
         if (authLoading) return;

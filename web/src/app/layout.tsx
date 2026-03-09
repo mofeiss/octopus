@@ -35,7 +35,7 @@ export default function RootLayout({
                 position: fixed;
                 inset: 0;
                 z-index: 9999;
-                display: flex;
+                display: none;
                 align-items: center;
                 justify-content: center;
                 background: hsl(var(--background));
