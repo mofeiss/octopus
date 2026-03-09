@@ -1,0 +1,104 @@
+package model
+
+type GroupChannelCheckTaskStatus string
+
+const (
+	GroupChannelCheckTaskStatusPending        GroupChannelCheckTaskStatus = "pending"
+	GroupChannelCheckTaskStatusRunning        GroupChannelCheckTaskStatus = "running"
+	GroupChannelCheckTaskStatusSuccess        GroupChannelCheckTaskStatus = "success"
+	GroupChannelCheckTaskStatusPartialSuccess GroupChannelCheckTaskStatus = "partial_success"
+	GroupChannelCheckTaskStatusFailed         GroupChannelCheckTaskStatus = "failed"
+)
+
+type GroupChannelCheckTaskMode string
+
+const (
+	GroupChannelCheckTaskModeBatch  GroupChannelCheckTaskMode = "batch"
+	GroupChannelCheckTaskModeSingle GroupChannelCheckTaskMode = "single"
+)
+
+type GroupChannelCheckItemStatus string
+
+const (
+	GroupChannelCheckItemStatusPending GroupChannelCheckItemStatus = "pending"
+	GroupChannelCheckItemStatusRunning GroupChannelCheckItemStatus = "running"
+	GroupChannelCheckItemStatusSuccess GroupChannelCheckItemStatus = "success"
+	GroupChannelCheckItemStatusFailed  GroupChannelCheckItemStatus = "failed"
+)
+
+type GroupChannelCheckTask struct {
+	ID           int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
+	GroupID      int                         `json:"group_id" gorm:"index"`
+	GroupName    string                      `json:"group_name"`
+	Mode         GroupChannelCheckTaskMode   `json:"mode"`
+	Status       GroupChannelCheckTaskStatus `json:"status" gorm:"index"`
+	TotalCount   int                         `json:"total_count"`
+	PendingCount int                         `json:"pending_count"`
+	RunningCount int                         `json:"running_count"`
+	SuccessCount int                         `json:"success_count"`
+	FailedCount  int                         `json:"failed_count"`
+	CreatedAt    int64                       `json:"created_at" gorm:"index"`
+	StartedAt    int64                       `json:"started_at"`
+	FinishedAt   int64                       `json:"finished_at"`
+	LastError    string                      `json:"last_error"`
+	Items        []GroupChannelCheckTaskItem `json:"items,omitempty" gorm:"foreignKey:TaskID"`
+}
+
+type GroupChannelCheckSyncResult struct {
+	GroupID       int    `json:"group_id"`
+	GroupName     string `json:"group_name"`
+	EnabledCount  int    `json:"enabled_count"`
+	DisabledCount int    `json:"disabled_count"`
+	SkippedCount  int    `json:"skipped_count"`
+}
+
+type GroupChannelCheckTaskItem struct {
+	ID                 int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
+	TaskID             int64                       `json:"task_id" gorm:"index"`
+	GroupID            int                         `json:"group_id" gorm:"index"`
+	GroupItemID        int                         `json:"group_item_id,omitempty" gorm:"default:0"`
+	ChannelID          int                         `json:"channel_id" gorm:"index"`
+	ChannelName        string                      `json:"channel_name"`
+	ChannelType        int                         `json:"channel_type"`
+	ModelName          string                      `json:"model_name"`
+	Status             GroupChannelCheckItemStatus `json:"status" gorm:"index"`
+	RequestKind        string                      `json:"request_kind"`
+	RequestURL         string                      `json:"request_url"`
+	BaseURL            string                      `json:"base_url"`
+	ChannelKeyID       int                         `json:"channel_key_id,omitempty" gorm:"default:0"`
+	ChannelKeyIndex    int                         `json:"channel_key_index,omitempty" gorm:"default:0"`
+	ChannelKeyPreview  string                      `json:"channel_key_preview,omitempty"`
+	ChannelKeyRemark   string                      `json:"channel_key_remark,omitempty"`
+	ResponseStatusCode int                         `json:"response_status_code"`
+	DurationMs         int                         `json:"duration_ms"`
+	RequestContent     string                      `json:"request_content"`
+	ResponsePreview    string                      `json:"response_preview"`
+	ResponseContent    string                      `json:"response_content"`
+	Error              string                      `json:"error"`
+	StartedAt          int64                       `json:"started_at"`
+	FinishedAt         int64                       `json:"finished_at"`
+}
+
+type GroupChannelCheckCreateRequest struct {
+	GroupID     int    `json:"group_id" binding:"required"`
+	GroupItemID int    `json:"group_item_id,omitempty"`
+	ChannelID   int    `json:"channel_id,omitempty"`
+	ModelName   string `json:"model_name,omitempty"`
+}
+
+type GroupChannelCheckState struct {
+	ID                  int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
+	GroupID             int                         `json:"group_id" gorm:"index"`
+	GroupItemID         int                         `json:"group_item_id" gorm:"uniqueIndex"`
+	ChannelID           int                         `json:"channel_id" gorm:"index"`
+	ModelName           string                      `json:"model_name"`
+	TaskID              int64                       `json:"task_id" gorm:"index"`
+	Status              GroupChannelCheckItemStatus `json:"status" gorm:"index"`
+	CheckedAt           int64                       `json:"checked_at" gorm:"index"`
+	SuccessAt           int64                       `json:"success_at"`
+	FailedAt            int64                       `json:"failed_at"`
+	ConsecutiveFailures int                         `json:"consecutive_failures"`
+	ResponseStatusCode  int                         `json:"response_status_code"`
+	DurationMs          int                         `json:"duration_ms"`
+	Error               string                      `json:"error"`
+}

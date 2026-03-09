@@ -13,6 +13,13 @@ export interface GroupItem {
     priority: number;
     weight: number;
     enabled?: boolean; // [fork] item 级启用开关
+    health_check_task_id?: number; // [fork] 最近一次测活任务 ID
+    health_check_status?: 'pending' | 'running' | 'success' | 'failed'; // [fork] 最近一次测活状态
+    health_check_checked_at?: number; // [fork] 最近一次测活完成时间
+    health_check_consecutive_failures?: number; // [fork] 独立连续失败计数
+    health_check_response_status_code?: number; // [fork] 最近一次测活状态码
+    health_check_duration_ms?: number; // [fork] 最近一次测活耗时
+    health_check_error?: string; // [fork] 最近一次测活错误
 }
 
 /**
@@ -38,6 +45,10 @@ export interface Group {
     route_aliases?: string;  // [fork] 逗号分隔的路由别名
     remark: string;          // [fork] 分组备注
     sort_order?: number;     // [fork] 分组排序
+    auto_health_check_enabled?: boolean; // [fork] 自动测活开关
+    auto_health_check_interval_minutes?: number; // [fork] 自动测活间隔（分钟）
+    auto_health_check_fail_threshold?: number; // [fork] 自动禁用连续失败阈值
+    auto_health_check_next_run_at?: number; // [fork] 自动测活下一次执行时间
     items?: GroupItem[];
 }
 
@@ -72,6 +83,10 @@ export interface GroupUpdateRequest {
     session_keep_time?: number;           // 仅在会话保持时间变更时发送
     route_aliases?: string;              // [fork] 仅在路由别名变更时发送
     remark?: string;                     // [fork] 仅在备注变更时发送
+    auto_health_check_enabled?: boolean; // [fork] 自动测活开关
+    auto_health_check_interval_minutes?: number; // [fork] 自动测活间隔（分钟）
+    auto_health_check_fail_threshold?: number; // [fork] 自动禁用连续失败阈值
+    auto_health_check_next_run_at?: number; // [fork] 自动测活下一次执行时间
     items_to_add?: GroupItemAddRequest[];    // 新增的 items
     items_to_update?: GroupItemUpdateRequest[]; // 更新的 items (priority 变更)
     items_to_delete?: number[];              // 删除的 item IDs
@@ -94,7 +109,7 @@ export function useGroupList() {
         queryFn: async () => {
             return apiClient.get<Group[]>('/api/v1/group/list');
         },
-        refetchInterval: 30000,
+        refetchInterval: 5000,
         refetchOnMount: 'always',
     });
 }

@@ -4,20 +4,22 @@ import { useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GroupCard } from './Card';
 import { useGroupList } from '@/api/endpoints/group';
+import { useGroupChannelCheckLatestTasks } from '@/api/endpoints/group-channel-check';
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
 import { useGridPageSize } from '@/hooks/use-grid-page-size';
 
 /** Group card approximate height (variable due to content) */
-const GROUP_CARD_HEIGHT = 280;
+const GROUP_CARD_HEIGHT = 330;
 
 export function Group() {
     const { data: groups } = useGroupList();
+    const { data: latestChannelCheckTasks = [] } = useGroupChannelCheckLatestTasks();
     const pageKey = 'group' as const;
     const pageSize = useGridPageSize({
         itemHeight: GROUP_CARD_HEIGHT,
         gap: 16,
-        columns: { default: 1, md: 2, lg: 3 },
+        columns: { default: 1, md: 2, lg: 2 }, // [fork] 分组卡片最多 2 列
     });
     const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
     const page = usePaginationStore((s) => s.getPage(pageKey));
@@ -50,6 +52,14 @@ export function Group() {
         return filteredGroups.slice(start, start + pageSize);
     }, [filteredGroups, page, pageSize]);
 
+    const latestTaskByGroupId = useMemo(() => {
+        const map = new Map<number, typeof latestChannelCheckTasks[number]>();
+        latestChannelCheckTasks.forEach((task) => {
+            map.set(task.group_id, task);
+        });
+        return map;
+    }, [latestChannelCheckTasks]);
+
     return (
         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
             <motion.div
@@ -65,7 +75,7 @@ export function Group() {
                 exit="exit"
                 transition={{ duration: 0.25, ease: EASING.easeOutExpo }}
             >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                     <AnimatePresence mode="popLayout">
                         {pagedGroups.map((group, index) => (
                             <motion.div
@@ -84,7 +94,7 @@ export function Group() {
                                 }}
                                 layout={!searchTerm.trim()}
                             >
-                                <GroupCard group={group} />
+                                <GroupCard group={group} latestChannelCheckTask={latestTaskByGroupId.get(group.id!)} />
                             </motion.div>
                         ))}
                     </AnimatePresence>

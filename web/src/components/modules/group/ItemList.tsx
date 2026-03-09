@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { Layers, GripVertical, X, Trash2 } from 'lucide-react';
+import { Layers, GripVertical, X, Trash2, Activity } from 'lucide-react';
 import {
     DragDropContext,
     Draggable,
@@ -21,6 +21,27 @@ export interface SelectedMember extends LLMChannel {
     item_id?: number;
     weight?: number;
     item_enabled?: boolean; // [fork] GroupItem 级启用状态
+    health_check_task_id?: number; // [fork] 最近一次测活任务 ID
+    health_check_status?: 'pending' | 'running' | 'success' | 'failed'; // [fork] 最近一次测活状态
+    health_check_checked_at?: number; // [fork] 最近一次测活时间
+    health_check_consecutive_failures?: number; // [fork] 连续失败计数
+    health_check_response_status_code?: number; // [fork] 最近一次测活状态码
+    health_check_duration_ms?: number; // [fork] 最近一次测活耗时
+    health_check_error?: string; // [fork] 最近一次测活错误
+}
+
+function getHealthCheckDotClass(status?: SelectedMember['health_check_status']) {
+    switch (status) {
+        case 'success':
+            return 'bg-emerald-500';
+        case 'failed':
+            return 'bg-destructive';
+        case 'running':
+        case 'pending':
+            return 'bg-amber-500';
+        default:
+            return 'bg-muted-foreground/30';
+    }
 }
 
 function reorderList<T>(list: T[], startIndex: number, endIndex: number): T[] {
@@ -42,6 +63,7 @@ function MemberItem({
     onRemove,
     onWeightChange,
     onToggleEnabled,
+    onProbe,
     isRemoving,
     index,
     showWeight = false,
@@ -53,6 +75,7 @@ function MemberItem({
     onRemove: (id: string) => void;
     onWeightChange?: (id: string, weight: number) => void;
     onToggleEnabled?: (id: string, enabled: boolean) => void;
+    onProbe?: (member: SelectedMember) => void; // [fork] 单个成员测活
     isRemoving?: boolean;
     index: number;
     showWeight?: boolean;
@@ -63,6 +86,23 @@ function MemberItem({
     const { Avatar: ModelAvatar } = getModelIcon(member.name);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isDisabled = member.enabled === false;
+    const t = useTranslations('group');
+    const healthCheckStatusLabel = (() => {
+        switch (member.health_check_status) {
+            case 'success':
+                return t('healthCheck.memberStatus.success');
+            case 'failed':
+                return t('healthCheck.memberStatus.failed');
+            case 'running':
+            case 'pending':
+                return t('healthCheck.memberStatus.running');
+            default:
+                return t('healthCheck.memberStatus.idle');
+        }
+    })();
+    const healthCheckTooltip = member.health_check_checked_at
+        ? `${healthCheckStatusLabel} · ${new Date(member.health_check_checked_at * 1000).toLocaleString('zh-CN')}`
+        : healthCheckStatusLabel;
 
     return (
         <div
@@ -133,6 +173,18 @@ function MemberItem({
                     <span className="text-[10px] text-muted-foreground truncate leading-tight">{member.channel_name}</span>
                 </div>
 
+                <Tooltip side="top" sideOffset={10} align="center">
+                    <TooltipTrigger asChild>
+                        <span
+                            className={cn(
+                                'size-2.5 shrink-0 rounded-full ring-2 ring-background',
+                                getHealthCheckDotClass(member.health_check_status)
+                            )}
+                        />
+                    </TooltipTrigger>
+                    <TooltipContent>{healthCheckTooltip}</TooltipContent>
+                </Tooltip>
+
                 {showWeight && (
                     <input
                         type="number"
@@ -144,6 +196,19 @@ function MemberItem({
                             isDisabled && 'text-muted-foreground'
                         )}
                     />
+                )}
+
+                {onProbe && (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onProbe(member);
+                        }}
+                        className="p-1 rounded hover:bg-primary/10 hover:text-primary transition-colors"
+                    >
+                        <Activity className="size-3.5" />
+                    </button>
                 )}
 
                 {(!showConfirmDelete || !confirmDelete) && (
@@ -196,6 +261,7 @@ export interface MemberListProps {
     onRemove: (id: string) => void;
     onWeightChange?: (id: string, weight: number) => void;
     onToggleEnabled?: (id: string, enabled: boolean) => void; // [fork]
+    onProbe?: (member: SelectedMember) => void; // [fork] 单个成员测活
     /**
      * When true, auto-scroll the list to bottom when a *new visible* member appears
      * (i.e. a new member id is added). Useful in "editor" flows. Defaults to true.
@@ -229,6 +295,7 @@ export function MemberList({
     onRemove,
     onWeightChange,
     onToggleEnabled,
+    onProbe,
     autoScrollOnAdd = true,
     onDragStart,
     onDrop,
@@ -336,6 +403,7 @@ export function MemberList({
                                                 onRemove={onRemove}
                                                 onWeightChange={onWeightChange}
                                                 onToggleEnabled={onToggleEnabled}
+                                                onProbe={onProbe}
                                                 isRemoving={removingIds.has(member.id)}
                                                 index={index}
                                                 showWeight={showWeight}

@@ -368,6 +368,69 @@
             "cancel": "取消",
             "saved": "排序已儲存",
             "saveFailed": "排序儲存失敗"
+        },
+        "healthCheck": {
+            "title": "渠道測活",
+            "batchTask": "批量測活任務",
+            "singleTask": "單個渠道測活任務",
+            "creating": "正在建立測活任務...",
+            "loading": "正在載入測活結果...",
+            "resultList": "測活結果",
+            "empty": "暫無測活明細",
+        "progress": "{done} / {total} 已完成",
+        "actions": {
+            "batch": "批量測活",
+            "syncStatus": "按測活結果同步啟用狀態",
+            "syncStatusSuccess": "已同步：啟用 {enabled} 個，禁用 {disabled} 個，跳過 {skipped} 個",
+            "syncStatusFailed": "同步啟用狀態失敗"
+        },
+        "toast": {
+            "created": "已加入測活佇列",
+            "createFailed": "建立測活任務失敗"
+        },
+            "metrics": {
+                "total": "總數",
+                "running": "進行中",
+                "success": "成功",
+                "failed": "失敗",
+                "createdAt": "建立時間"
+            },
+            "latest": {
+                "pending": "待執行 · 共 {total} 項",
+                "running": "測活中 · {done}/{total}",
+                "success": "最近成功 · {success}/{total}",
+                "partial": "最近部分成功 · {success}/{total}",
+                "failed": "最近失敗 · {failed} 項"
+            },
+        "status": {
+            "pending": "待執行",
+            "running": "進行中",
+            "success": "成功",
+            "partialSuccess": "部分成功",
+            "failed": "失敗"
+        },
+        "memberStatus": {
+            "idle": "未測活",
+            "running": "測活中",
+            "success": "最近成功",
+            "failed": "最近失敗"
+        },
+        "auto": {
+            "title": "自動測活同步禁用",
+            "disabled": "關閉後不會自動測活或自動啟停渠道",
+            "summary": "每 {interval} 分鐘測一次，連續失敗 {threshold} 次自動禁用",
+            "intervalLabel": "每隔多久自動測一次（分鐘）",
+            "failThresholdLabel": "連續失敗幾次後自動禁用",
+            "hint": "自動測活會在後台真實發起請求。只要成功 1 次，就會清空連續失敗計數並立刻重新啟用該渠道。",
+            "save": "保存並啟用"
+        },
+        "detail": {
+            "preview": "結果摘要",
+            "request": "請求內容",
+                "response": "響應內容",
+                "duration": "耗時 {value}",
+                "statusCode": "狀態碼 {value}"
+            }
         }
     },
     "model": {

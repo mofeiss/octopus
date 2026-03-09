@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
@@ -89,6 +90,25 @@ func updateGroup(c *gin.Context) {
 		if err != nil {
 			resp.Error(c, http.StatusBadRequest, err.Error())
 			return
+		}
+	}
+	now := time.Now().Unix()
+	if req.AutoHealthCheckEnabled != nil {
+		if *req.AutoHealthCheckEnabled {
+			if req.AutoHealthCheckNextRunAt == nil || *req.AutoHealthCheckNextRunAt <= 0 {
+				req.AutoHealthCheckNextRunAt = &now
+			}
+		} else {
+			zero := int64(0)
+			req.AutoHealthCheckNextRunAt = &zero
+		}
+	}
+	if req.AutoHealthCheckEnabled == nil &&
+		(req.AutoHealthCheckIntervalMinutes != nil || req.AutoHealthCheckFailThreshold != nil) &&
+		req.AutoHealthCheckNextRunAt == nil {
+		group, err := op.GroupGet(req.ID, c.Request.Context())
+		if err == nil && group.AutoHealthCheckEnabled {
+			req.AutoHealthCheckNextRunAt = &now
 		}
 	}
 	group, err := op.GroupUpdate(&req, c.Request.Context())

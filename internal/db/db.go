@@ -57,6 +57,9 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.ChannelKey{},
 		&model.Group{},
 		&model.GroupItem{},
+		&model.GroupChannelCheckTask{},     // [fork] 渠道测活任务
+		&model.GroupChannelCheckTaskItem{}, // [fork] 渠道测活任务项
+		&model.GroupChannelCheckState{},    // [fork] 渠道测活成员状态
 		&model.LLMInfo{},
 		&model.APIKey{},
 		&model.Setting{},

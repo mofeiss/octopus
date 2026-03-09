@@ -19,6 +19,10 @@ type Group struct {
 	RouteAliases      string      `json:"route_aliases"`        // [fork] 逗号分隔的路由别名
 	Remark            string      `json:"remark"`               // [fork] 分组备注
 	SortOrder         int         `json:"sort_order"`           // [fork] 分组排序字段
+	AutoHealthCheckEnabled         bool        `json:"auto_health_check_enabled" gorm:"default:false"`          // [fork] 自动测活开关
+	AutoHealthCheckIntervalMinutes int         `json:"auto_health_check_interval_minutes" gorm:"default:0"`    // [fork] 自动测活间隔（分钟）
+	AutoHealthCheckFailThreshold   int         `json:"auto_health_check_fail_threshold" gorm:"default:0"`      // [fork] 连续失败多少次自动禁用
+	AutoHealthCheckNextRunAt       int64       `json:"auto_health_check_next_run_at" gorm:"default:0;index"`   // [fork] 自动测活下一次执行时间
 	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
 
@@ -30,6 +34,13 @@ type GroupItem struct {
 	Priority  int    `json:"priority"`
 	Weight    int    `json:"weight"`
 	Enabled   bool   `json:"enabled" gorm:"default:true"` // [fork] item 级启用开关
+	HealthCheckTaskID              int64                       `json:"health_check_task_id,omitempty" gorm:"-"`
+	HealthCheckStatus              GroupChannelCheckItemStatus `json:"health_check_status,omitempty" gorm:"-"`
+	HealthCheckCheckedAt           int64                       `json:"health_check_checked_at,omitempty" gorm:"-"`
+	HealthCheckConsecutiveFailures int                         `json:"health_check_consecutive_failures,omitempty" gorm:"-"`
+	HealthCheckResponseStatusCode  int                         `json:"health_check_response_status_code,omitempty" gorm:"-"`
+	HealthCheckDurationMs          int                         `json:"health_check_duration_ms,omitempty" gorm:"-"`
+	HealthCheckError               string                      `json:"health_check_error,omitempty" gorm:"-"`
 }
 
 // GroupUpdateRequest 分组更新请求 - 仅包含变更的数据
@@ -42,6 +53,10 @@ type GroupUpdateRequest struct {
 	SessionKeepTime   *int                     `json:"session_keep_time,omitempty"`    // 仅在会话保持时间变更时发送(秒)
 	RouteAliases      *string                  `json:"route_aliases,omitempty"`        // [fork] 仅在路由别名变更时发送
 	Remark            *string                  `json:"remark,omitempty"`               // [fork] 仅在备注变更时发送
+	AutoHealthCheckEnabled         *bool       `json:"auto_health_check_enabled,omitempty"`          // [fork] 自动测活开关
+	AutoHealthCheckIntervalMinutes *int        `json:"auto_health_check_interval_minutes,omitempty"` // [fork] 自动测活间隔（分钟）
+	AutoHealthCheckFailThreshold   *int        `json:"auto_health_check_fail_threshold,omitempty"`   // [fork] 连续失败阈值
+	AutoHealthCheckNextRunAt       *int64      `json:"auto_health_check_next_run_at,omitempty"`      // [fork] 自动测活下一次执行时间
 	ItemsToAdd        []GroupItemAddRequest    `json:"items_to_add,omitempty"`         // 新增的 items
 	ItemsToUpdate     []GroupItemUpdateRequest `json:"items_to_update,omitempty"`      // 更新的 items (priority 变更)
 	ItemsToDelete     []int                    `json:"items_to_delete,omitempty"`      // 删除的 item IDs

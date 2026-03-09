@@ -20,6 +20,9 @@ const (
 )
 
 func Init() {
+	// [fork] 初始化渠道测活后台队列，避免配置项读取失败时未启动队列
+	InitGroupChannelCheckQueue()
+
 	priceUpdateIntervalHours, err := op.SettingGetInt(model.SettingKeyModelInfoUpdateInterval)
 	if err != nil {
 		log.Errorf("failed to get model info update interval: %v", err)
@@ -35,6 +38,8 @@ func Init() {
 
 	// 注册基础URL延迟任务
 	Register(TaskBaseUrlDelay, 1*time.Hour, true, ChannelBaseUrlDelayTask)
+	// [fork] 注册分组自动测活调度任务
+	Register(TaskGroupAutoHealthCheck, 1*time.Minute, true, RunAutoGroupChannelChecks)
 
 	// 注册LLM同步任务
 	syncLLMIntervalHours, err := op.SettingGetInt(model.SettingKeySyncLLMInterval)

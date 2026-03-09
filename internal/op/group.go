@@ -112,6 +112,22 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		selectFields = append(selectFields, "remark")
 		updates.Remark = *req.Remark
 	}
+	if req.AutoHealthCheckEnabled != nil {
+		selectFields = append(selectFields, "auto_health_check_enabled")
+		updates.AutoHealthCheckEnabled = *req.AutoHealthCheckEnabled
+	}
+	if req.AutoHealthCheckIntervalMinutes != nil {
+		selectFields = append(selectFields, "auto_health_check_interval_minutes")
+		updates.AutoHealthCheckIntervalMinutes = *req.AutoHealthCheckIntervalMinutes
+	}
+	if req.AutoHealthCheckFailThreshold != nil {
+		selectFields = append(selectFields, "auto_health_check_fail_threshold")
+		updates.AutoHealthCheckFailThreshold = *req.AutoHealthCheckFailThreshold
+	}
+	if req.AutoHealthCheckNextRunAt != nil {
+		selectFields = append(selectFields, "auto_health_check_next_run_at")
+		updates.AutoHealthCheckNextRunAt = *req.AutoHealthCheckNextRunAt
+	}
 
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {
@@ -125,6 +141,10 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		if err := tx.Where("id IN ? AND group_id = ?", req.ItemsToDelete, req.ID).Delete(&model.GroupItem{}).Error; err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("failed to delete items: %w", err)
+		}
+		if err := tx.Where("group_item_id IN ?", req.ItemsToDelete).Delete(&model.GroupChannelCheckState{}).Error; err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("failed to delete item channel check states: %w", err)
 		}
 	}
 
@@ -205,6 +225,10 @@ func GroupDel(id int, ctx context.Context) error {
 	if err := tx.Where("group_id = ?", id).Delete(&model.GroupItem{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("failed to delete group items: %w", err)
+	}
+	if err := tx.Where("group_id = ?", id).Delete(&model.GroupChannelCheckState{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to delete group channel check states: %w", err)
 	}
 
 	if err := tx.Delete(&model.Group{}, id).Error; err != nil {
@@ -370,6 +394,9 @@ func groupRefreshCache(ctx context.Context) error {
 		Find(&groups).Error; err != nil {
 		return err
 	}
+	if err := attachGroupChannelCheckStates(groups, ctx); err != nil {
+		return err
+	}
 	for _, group := range groups {
 		groupCache.Set(group.ID, group)
 		groupMapSetWithAliases(group) // [fork]
@@ -384,6 +411,11 @@ func groupRefreshCacheByID(id int, ctx context.Context) error {
 		First(&group, id).Error; err != nil {
 		return err
 	}
+	groups := []model.Group{group}
+	if err := attachGroupChannelCheckStates(groups, ctx); err != nil {
+		return err
+	}
+	group = groups[0]
 	groupCache.Set(group.ID, group)
 	groupMapSetWithAliases(group) // [fork]
 	return nil
@@ -398,6 +430,9 @@ func groupRefreshCacheByIDs(ids []int, ctx context.Context) error {
 		Preload("Items").
 		Where("id IN ?", ids).
 		Find(&groups).Error; err != nil {
+		return err
+	}
+	if err := attachGroupChannelCheckStates(groups, ctx); err != nil {
 		return err
 	}
 	for _, group := range groups {

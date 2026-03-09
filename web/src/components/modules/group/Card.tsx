@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Trash2, X, Pencil } from 'lucide-react';
+import { Trash2, X, Pencil, Activity, Settings2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type Group, useDeleteGroup, useUpdateGroup, useEnableGroupItem } from '@/api/endpoints/group';
+import { type GroupChannelCheckTask, GroupChannelCheckTaskStatus, isGroupChannelCheckTaskActive, useCreateGroupChannelCheckTask } from '@/api/endpoints/group-channel-check';
 import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -34,6 +36,16 @@ import {
     MorphingDialogTrigger,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
+import { GroupChannelCheckDialog } from './ChannelCheckDialog';
+
+function withTranslationFallback(translated: string, fallback: string, keys: string[]) {
+    const normalized = translated.trim();
+    if (!normalized) return fallback;
+    if (normalized.startsWith('MISSING_MESSAGE') || normalized.startsWith('MISSING_TRANSLATION')) return fallback;
+    if (keys.includes(normalized)) return fallback;
+    if (keys.some((key) => normalized.endsWith(key))) return fallback;
+    return translated;
+}
 
 interface EditDialogContentProps {
     group: Group;
@@ -79,11 +91,12 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
     );
 }
 
-export function GroupCard({ group }: { group: Group }) {
+export function GroupCard({ group, latestChannelCheckTask }: { group: Group; latestChannelCheckTask?: GroupChannelCheckTask }) {
     const t = useTranslations('group');
     const updateGroup = useUpdateGroup();
     const deleteGroup = useDeleteGroup();
     const enableGroupItem = useEnableGroupItem(); // [fork]
+    const createChannelCheckTask = useCreateGroupChannelCheckTask(); // [fork] 渠道测活
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -91,6 +104,11 @@ export function GroupCard({ group }: { group: Group }) {
     const [deleteRemarkOpen, setDeleteRemarkOpen] = useState(false);
     const [remarkDraft, setRemarkDraft] = useState('');
     const [members, setMembers] = useState<SelectedMember[]>([]);
+    const [channelCheckOpen, setChannelCheckOpen] = useState(false);
+    const [selectedChannelCheckTaskId, setSelectedChannelCheckTaskId] = useState<number | null>(null);
+    const [autoHealthCheckOpen, setAutoHealthCheckOpen] = useState(false);
+    const [autoHealthCheckInterval, setAutoHealthCheckInterval] = useState('30');
+    const [autoHealthCheckFailThreshold, setAutoHealthCheckFailThreshold] = useState('1');
     const isDragging = useRef(false);
     const weightTimerRef = useRef<NodeJS.Timeout | null>(null);
     const membersRef = useRef<SelectedMember[]>([]);
@@ -116,6 +134,13 @@ export function GroupCard({ group }: { group: Group }) {
                 channel_name: channelNameByKey.get(modelChannelKey(item.channel_id, item.model_name)) ?? `Channel ${item.channel_id}`,
                 item_id: item.id,
                 weight: item.weight,
+                health_check_task_id: item.health_check_task_id,
+                health_check_status: item.health_check_status,
+                health_check_checked_at: item.health_check_checked_at,
+                health_check_consecutive_failures: item.health_check_consecutive_failures,
+                health_check_response_status_code: item.health_check_response_status_code,
+                health_check_duration_ms: item.health_check_duration_ms,
+                health_check_error: item.health_check_error,
             })),
         [group.items, channelNameByKey, enabledByKey]
     );
@@ -131,6 +156,13 @@ export function GroupCard({ group }: { group: Group }) {
     useEffect(() => {
         membersRef.current = members;
     }, [members]);
+
+    useEffect(() => {
+        queueMicrotask(() => {
+            setAutoHealthCheckInterval(String(group.auto_health_check_interval_minutes || 30));
+            setAutoHealthCheckFailThreshold(String(group.auto_health_check_fail_threshold || 1));
+        });
+    }, [group.auto_health_check_fail_threshold, group.auto_health_check_interval_minutes]);
 
     useEffect(() => {
         return () => { if (weightTimerRef.current) clearTimeout(weightTimerRef.current); };
@@ -178,6 +210,15 @@ export function GroupCard({ group }: { group: Group }) {
         const v = updateGroup.variables;
         if (typeof v !== 'object' || v === null) return false;
         return 'mode' in v && typeof (v as { mode?: unknown }).mode === 'number';
+    })();
+    const isUpdatingAutoHealthCheck = (() => {
+        if (!updateGroup.isPending) return false;
+        const v = updateGroup.variables;
+        if (typeof v !== 'object' || v === null) return false;
+        return 'auto_health_check_enabled' in v ||
+            'auto_health_check_interval_minutes' in v ||
+            'auto_health_check_fail_threshold' in v ||
+            'auto_health_check_next_run_at' in v;
     })();
 
     const priorityByItemId = useMemo(() => {
@@ -235,6 +276,195 @@ export function GroupCard({ group }: { group: Group }) {
             }
         );
     }, [enableGroupItem, t, onError]);
+
+    const openChannelCheckTask = useCallback((taskId?: number | null) => {
+        if (!taskId) return;
+        setSelectedChannelCheckTaskId(taskId);
+        setChannelCheckOpen(true);
+    }, []);
+
+    const autoHealthCheckTitle = withTranslationFallback(
+        t('healthCheck.auto.title'),
+        '自动测活同步禁用',
+        ['group.healthCheck.auto.title', 'healthCheck.auto.title']
+    );
+    const autoHealthCheckShortTitle = withTranslationFallback(
+        t('healthCheck.auto.shortTitle'),
+        '自动测活',
+        ['group.healthCheck.auto.shortTitle', 'healthCheck.auto.shortTitle']
+    );
+    const autoHealthCheckDisabledText = withTranslationFallback(
+        t('healthCheck.auto.disabled'),
+        '关闭后不会自动测活或自动启停渠道',
+        ['group.healthCheck.auto.disabled', 'healthCheck.auto.disabled']
+    );
+    const autoHealthCheckSummary = group.auto_health_check_enabled
+        ? withTranslationFallback(
+            t('healthCheck.auto.summary', {
+                interval: group.auto_health_check_interval_minutes || 0,
+                threshold: group.auto_health_check_fail_threshold || 1,
+            }),
+            `每 ${group.auto_health_check_interval_minutes || 0} 分钟测一次，连续失败 ${group.auto_health_check_fail_threshold || 1} 次自动禁用`,
+            ['group.healthCheck.auto.summary', 'healthCheck.auto.summary']
+        )
+        : autoHealthCheckDisabledText;
+
+    const latestChannelCheckLabel = useMemo(() => {
+        if (!latestChannelCheckTask) return '';
+        switch (latestChannelCheckTask.status) {
+            case GroupChannelCheckTaskStatus.Pending:
+                return withTranslationFallback(
+                    t('healthCheck.latest.pending', { total: latestChannelCheckTask.total_count }),
+                    `待执行 · 共 ${latestChannelCheckTask.total_count} 项`,
+                    ['group.healthCheck.latest.pending', 'healthCheck.latest.pending']
+                );
+            case GroupChannelCheckTaskStatus.Running:
+                return withTranslationFallback(
+                    t('healthCheck.latest.running', {
+                        done: latestChannelCheckTask.success_count + latestChannelCheckTask.failed_count,
+                        total: latestChannelCheckTask.total_count,
+                    }),
+                    `测活中 · ${latestChannelCheckTask.success_count + latestChannelCheckTask.failed_count}/${latestChannelCheckTask.total_count}`,
+                    ['group.healthCheck.latest.running', 'healthCheck.latest.running']
+                );
+            case GroupChannelCheckTaskStatus.Success:
+                return withTranslationFallback(
+                    t('healthCheck.latest.success', { success: latestChannelCheckTask.success_count, total: latestChannelCheckTask.total_count }),
+                    `最近成功 · ${latestChannelCheckTask.success_count}/${latestChannelCheckTask.total_count}`,
+                    ['group.healthCheck.latest.success', 'healthCheck.latest.success']
+                );
+            case GroupChannelCheckTaskStatus.PartialSuccess:
+                return withTranslationFallback(
+                    t('healthCheck.latest.partial', { success: latestChannelCheckTask.success_count, total: latestChannelCheckTask.total_count }),
+                    `最近部分成功 · ${latestChannelCheckTask.success_count}/${latestChannelCheckTask.total_count}`,
+                    ['group.healthCheck.latest.partial', 'healthCheck.latest.partial']
+                );
+            case GroupChannelCheckTaskStatus.Failed:
+                return withTranslationFallback(
+                    t('healthCheck.latest.failed', { failed: latestChannelCheckTask.failed_count || latestChannelCheckTask.total_count }),
+                    `最近失败 · ${latestChannelCheckTask.failed_count || latestChannelCheckTask.total_count} 项`,
+                    ['group.healthCheck.latest.failed', 'healthCheck.latest.failed']
+                );
+            default:
+                return '';
+        }
+    }, [latestChannelCheckTask, t]);
+
+    const handleCreateBatchChannelCheck = useCallback(() => {
+        if (!group.id) return;
+        if (isGroupChannelCheckTaskActive(latestChannelCheckTask)) {
+            openChannelCheckTask(latestChannelCheckTask?.id);
+            return;
+        }
+        setChannelCheckOpen(true);
+        setSelectedChannelCheckTaskId(null);
+        createChannelCheckTask.mutate(
+            { group_id: group.id },
+            {
+                onSuccess: (task) => {
+                    setSelectedChannelCheckTaskId(task.id);
+                    toast.success(withTranslationFallback(
+                        t('healthCheck.toast.created'),
+                        '已加入测活队列',
+                        ['group.healthCheck.toast.created', 'healthCheck.toast.created']
+                    ));
+                },
+                onError: (error) => {
+                    setChannelCheckOpen(false);
+                    toast.error(
+                        withTranslationFallback(
+                            t('healthCheck.toast.createFailed'),
+                            '创建测活任务失败',
+                            ['group.healthCheck.toast.createFailed', 'healthCheck.toast.createFailed']
+                        ),
+                        { description: error.message }
+                    );
+                },
+            }
+        );
+    }, [createChannelCheckTask, group.id, latestChannelCheckTask, openChannelCheckTask, t]);
+
+    const handleCreateSingleChannelCheck = useCallback((member: SelectedMember) => {
+        if (!group.id) return;
+        createChannelCheckTask.mutate(
+            {
+                group_id: group.id,
+                group_item_id: member.item_id,
+                channel_id: member.channel_id,
+                model_name: member.name,
+            },
+            {
+                onSuccess: () => {
+                    toast.success(withTranslationFallback(
+                        t('healthCheck.toast.created'),
+                        '已加入测活队列',
+                        ['group.healthCheck.toast.created', 'healthCheck.toast.created']
+                    ));
+                },
+                onError: (error) => {
+                    toast.error(
+                        withTranslationFallback(
+                            t('healthCheck.toast.createFailed'),
+                            '创建测活任务失败',
+                            ['group.healthCheck.toast.createFailed', 'healthCheck.toast.createFailed']
+                        ),
+                        { description: error.message }
+                    );
+                },
+            }
+        );
+    }, [createChannelCheckTask, group.id, t]);
+
+    const handleOpenAutoHealthCheckConfig = useCallback(() => {
+        setAutoHealthCheckInterval(String(group.auto_health_check_interval_minutes || 30));
+        setAutoHealthCheckFailThreshold(String(group.auto_health_check_fail_threshold || 1));
+        setAutoHealthCheckOpen(true);
+    }, [group.auto_health_check_fail_threshold, group.auto_health_check_interval_minutes]);
+
+    const handleToggleAutoHealthCheck = useCallback((checked: boolean) => {
+        if (!group.id) return;
+        const intervalMinutes = group.auto_health_check_interval_minutes || 30;
+        const failThreshold = group.auto_health_check_fail_threshold || 1;
+        updateGroup.mutate(
+            {
+                id: group.id,
+                auto_health_check_enabled: checked,
+                auto_health_check_interval_minutes: intervalMinutes,
+                auto_health_check_fail_threshold: failThreshold,
+                auto_health_check_next_run_at: checked ? Math.floor(Date.now() / 1000) : 0,
+            },
+            { onSuccess, onError }
+        );
+    }, [
+        group.auto_health_check_fail_threshold,
+        group.auto_health_check_interval_minutes,
+        group.id,
+        onError,
+        onSuccess,
+        updateGroup,
+    ]);
+
+    const handleSaveAutoHealthCheck = useCallback(() => {
+        if (!group.id) return;
+        const intervalMinutes = Math.max(1, parseInt(autoHealthCheckInterval, 10) || 0);
+        const failThreshold = Math.max(1, parseInt(autoHealthCheckFailThreshold, 10) || 0);
+        updateGroup.mutate(
+            {
+                id: group.id,
+                auto_health_check_enabled: true,
+                auto_health_check_interval_minutes: intervalMinutes,
+                auto_health_check_fail_threshold: failThreshold,
+                auto_health_check_next_run_at: Math.floor(Date.now() / 1000),
+            },
+            {
+                onSuccess: () => {
+                    setAutoHealthCheckOpen(false);
+                    onSuccess();
+                },
+                onError,
+            }
+        );
+    }, [autoHealthCheckFailThreshold, autoHealthCheckInterval, group.id, onError, onSuccess, updateGroup]);
 
     const handleSubmitEdit = useCallback((values: GroupEditorValues, onDone?: () => void) => {
         if (!group.id) return;
@@ -405,6 +635,65 @@ export function GroupCard({ group }: { group: Group }) {
                     </div>
                 )}
 
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleCreateBatchChannelCheck}
+                        disabled={!group.id || createChannelCheckTask.isPending}
+                        className="rounded-xl"
+                    >
+                        <Activity className="size-4" />
+                        {withTranslationFallback(
+                            t('healthCheck.actions.batch'),
+                            '批量测活',
+                            ['group.healthCheck.actions.batch', 'healthCheck.actions.batch']
+                        )}
+                    </Button>
+
+                    {latestChannelCheckTask && (
+                        <button
+                            type="button"
+                            onClick={() => openChannelCheckTask(latestChannelCheckTask.id)}
+                            className={cn(
+                                'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors',
+                                latestChannelCheckTask.status === GroupChannelCheckTaskStatus.Failed
+                                    ? 'border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10'
+                                    : latestChannelCheckTask.status === GroupChannelCheckTaskStatus.Success
+                                        ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-600 hover:bg-emerald-500/10'
+                                        : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10'
+                            )}
+                        >
+                            <Activity className="size-4" />
+                            <span>{latestChannelCheckLabel}</span>
+                        </button>
+                    )}
+
+                    <Tooltip side="top" sideOffset={10} align="center">
+                        <TooltipTrigger asChild>
+                            <div className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-background/80 px-3 py-2">
+                                <span className="text-sm font-medium text-foreground">{autoHealthCheckShortTitle}</span>
+                                <Switch
+                                    checked={!!group.auto_health_check_enabled}
+                                    onCheckedChange={handleToggleAutoHealthCheck}
+                                    disabled={!group.id || isUpdatingAutoHealthCheck}
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleOpenAutoHealthCheckConfig}
+                                    disabled={!group.id}
+                                    className="size-7 rounded-lg"
+                                >
+                                    <Settings2 className="size-3.5" />
+                                </Button>
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>{autoHealthCheckSummary}</TooltipContent>
+                    </Tooltip>
+                </div>
+
                 {/* Mode: quick switch (no need to enter Edit) */}
                 <div className="flex gap-1 mb-3">
                     {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted] as const).map((m) => (
@@ -436,6 +725,7 @@ export function GroupCard({ group }: { group: Group }) {
                         onRemove={handleRemoveMember}
                         onWeightChange={handleWeightChange}
                         onToggleEnabled={handleToggleItemEnabled}
+                        onProbe={handleCreateSingleChannelCheck}
                         onDragStart={handleDragStart}
                         onDrop={handleDropReorder}
                         onDragFinish={handleDragFinish}
@@ -500,6 +790,82 @@ export function GroupCard({ group }: { group: Group }) {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <Dialog open={autoHealthCheckOpen} onOpenChange={setAutoHealthCheckOpen}>
+                <DialogContent className="sm:max-w-md rounded-2xl">
+                    <DialogHeader>
+                        <DialogTitle>{autoHealthCheckTitle}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">
+                                {withTranslationFallback(
+                                    t('healthCheck.auto.intervalLabel'),
+                                    '每隔多久自动测一次（分钟）',
+                                    ['group.healthCheck.auto.intervalLabel', 'healthCheck.auto.intervalLabel']
+                                )}
+                            </label>
+                            <Input
+                                type="number"
+                                min={1}
+                                value={autoHealthCheckInterval}
+                                onChange={(e) => setAutoHealthCheckInterval(e.target.value)}
+                                className="rounded-xl"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">
+                                {withTranslationFallback(
+                                    t('healthCheck.auto.failThresholdLabel'),
+                                    '连续失败几次后自动禁用',
+                                    ['group.healthCheck.auto.failThresholdLabel', 'healthCheck.auto.failThresholdLabel']
+                                )}
+                            </label>
+                            <Input
+                                type="number"
+                                min={1}
+                                value={autoHealthCheckFailThreshold}
+                                onChange={(e) => setAutoHealthCheckFailThreshold(e.target.value)}
+                                className="rounded-xl"
+                            />
+                        </div>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                            {withTranslationFallback(
+                                t('healthCheck.auto.hint'),
+                                '自动测活会在后台真实发起请求。只要成功 1 次，就会清空连续失败计数并立刻重新启用该渠道。',
+                                ['group.healthCheck.auto.hint', 'healthCheck.auto.hint']
+                            )}
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="secondary"
+                            onClick={() => setAutoHealthCheckOpen(false)}
+                            className="rounded-xl"
+                        >
+                            {t('card.cancel')}
+                        </Button>
+                        <Button
+                            onClick={handleSaveAutoHealthCheck}
+                            disabled={isUpdatingAutoHealthCheck}
+                            className="rounded-xl"
+                        >
+                            {withTranslationFallback(
+                                t('healthCheck.auto.save'),
+                                '保存并启用',
+                                ['group.healthCheck.auto.save', 'healthCheck.auto.save']
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <GroupChannelCheckDialog
+                open={channelCheckOpen}
+                onOpenChange={setChannelCheckOpen}
+                taskId={selectedChannelCheckTaskId}
+                creating={createChannelCheckTask.isPending && !selectedChannelCheckTaskId}
+            />
         </>
     );
 }
