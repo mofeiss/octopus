@@ -51,7 +51,9 @@
         "key": "Key",
         "model": "Price",
         "log": "Log",
-        "setting": "Setting"
+        "setting": "Setting",
+        "toggleThemeToLight": "Switch to light",
+        "toggleThemeToDark": "Switch to dark"
     },
     "common": {
         "copy": {
@@ -379,7 +381,7 @@
             "empty": "No health-check details",
         "progress": "{done} / {total} completed",
         "actions": {
-            "batch": "Batch Check",
+            "batch": "Batch",
             "syncStatus": "Sync enabled state from this check",
             "syncStatusSuccess": "Synced: enabled {enabled}, disabled {disabled}, skipped {skipped}",
             "syncStatusFailed": "Failed to sync enabled state"
@@ -395,13 +397,13 @@
                 "failed": "Failed",
                 "createdAt": "Created"
             },
-            "latest": {
-                "pending": "Queued · {total} items",
-                "running": "Checking · {done}/{total}",
-                "success": "Last success · {success}/{total}",
-                "partial": "Last partial success · {success}/{total}",
-                "failed": "Last failed · {failed} items"
-            },
+        "latest": {
+            "pending": "Queued {total}",
+            "running": "Run {done}/{total}",
+            "success": "OK {success}/{total}",
+            "partial": "Part {success}/{total}",
+            "failed": "Fail {failed}"
+        },
         "status": {
             "pending": "Queued",
             "running": "Running",
@@ -417,6 +419,7 @@
         },
         "auto": {
             "title": "Auto check with auto disable",
+            "shortTitle": "Auto",
             "disabled": "Disabled. No background checks or auto enable/disable sync.",
             "summary": "Check every {interval} minutes, auto disable after {threshold} consecutive failures",
             "intervalLabel": "Run health check every how many minutes",

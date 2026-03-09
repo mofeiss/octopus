@@ -1,6 +1,9 @@
 "use client"
 
 import { motion } from "motion/react"
+import { Moon, Sun } from "lucide-react"
+import { useTheme } from "next-themes"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { useNavStore, type NavItem } from "@/components/modules/navbar"
 import { ROUTES } from "@/route/config"
@@ -10,6 +13,10 @@ import { ENTRANCE_VARIANTS } from "@/lib/animations/fluid-transitions"
 export function NavBar() {
     const { activeItem, setActiveItem } = useNavStore()
     const { preload } = usePreload()
+    const t = useTranslations('navbar')
+    const { resolvedTheme, setTheme } = useTheme()
+    const isDark = resolvedTheme === 'dark'
+    const themeToggleLabel = isDark ? t('toggleThemeToLight') : t('toggleThemeToDark')
 
     return (
         <div className="relative z-50 md:min-h-screen">
@@ -33,6 +40,8 @@ export function NavBar() {
                             type="button"
                             onClick={() => setActiveItem(route.id as NavItem)}
                             onMouseEnter={() => preload(route.id)}
+                            aria-label={t(route.id)}
+                            title={t(route.id)}
                             className={cn(
                                 "relative p-2 md:p-3 rounded-2xl z-20",
                                 isActive ? "text-sidebar-primary-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent"
@@ -62,6 +71,31 @@ export function NavBar() {
                         </motion.button>
                     )
                 })}
+                <div className="mx-1 h-8 w-px bg-sidebar-border/80 md:mx-0 md:h-px md:w-8" />
+                <motion.button
+                    type="button"
+                    onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                    aria-label={themeToggleLabel}
+                    title={themeToggleLabel}
+                    className="relative rounded-2xl p-2 text-sidebar-foreground/60 hover:bg-sidebar-accent md:p-3"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{
+                        opacity: 1,
+                        scale: 1,
+                        transition: {
+                            delay: ROUTES.length * 0.05,
+                            duration: 0.3,
+                        }
+                    }}
+                    whileHover={{ scale: 1.1, zIndex: 30 }}
+                    whileTap={{ scale: 0.95 }}
+                >
+                    {/* [fork] quick theme toggle entry in sidebar */}
+                    <span className="relative block size-5 md:size-6">
+                        <Sun className="absolute inset-0 size-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 md:size-6" strokeWidth={2} />
+                        <Moon className="absolute inset-0 size-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100 md:size-6" strokeWidth={2} />
+                    </span>
+                </motion.button>
             </motion.nav>
         </div>
     )

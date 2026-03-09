@@ -290,7 +290,7 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
     );
     const autoHealthCheckShortTitle = withTranslationFallback(
         t('healthCheck.auto.shortTitle'),
-        '自动测活',
+        '自动测',
         ['group.healthCheck.auto.shortTitle', 'healthCheck.auto.shortTitle']
     );
     const autoHealthCheckDisabledText = withTranslationFallback(
@@ -315,7 +315,7 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
             case GroupChannelCheckTaskStatus.Pending:
                 return withTranslationFallback(
                     t('healthCheck.latest.pending', { total: latestChannelCheckTask.total_count }),
-                    `待执行 · 共 ${latestChannelCheckTask.total_count} 项`,
+                    `待测 ${latestChannelCheckTask.total_count}`,
                     ['group.healthCheck.latest.pending', 'healthCheck.latest.pending']
                 );
             case GroupChannelCheckTaskStatus.Running:
@@ -324,25 +324,25 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                         done: latestChannelCheckTask.success_count + latestChannelCheckTask.failed_count,
                         total: latestChannelCheckTask.total_count,
                     }),
-                    `测活中 · ${latestChannelCheckTask.success_count + latestChannelCheckTask.failed_count}/${latestChannelCheckTask.total_count}`,
+                    `测中 ${latestChannelCheckTask.success_count + latestChannelCheckTask.failed_count}/${latestChannelCheckTask.total_count}`,
                     ['group.healthCheck.latest.running', 'healthCheck.latest.running']
                 );
             case GroupChannelCheckTaskStatus.Success:
                 return withTranslationFallback(
                     t('healthCheck.latest.success', { success: latestChannelCheckTask.success_count, total: latestChannelCheckTask.total_count }),
-                    `最近成功 · ${latestChannelCheckTask.success_count}/${latestChannelCheckTask.total_count}`,
+                    `成功 ${latestChannelCheckTask.success_count}/${latestChannelCheckTask.total_count}`,
                     ['group.healthCheck.latest.success', 'healthCheck.latest.success']
                 );
             case GroupChannelCheckTaskStatus.PartialSuccess:
                 return withTranslationFallback(
                     t('healthCheck.latest.partial', { success: latestChannelCheckTask.success_count, total: latestChannelCheckTask.total_count }),
-                    `最近部分成功 · ${latestChannelCheckTask.success_count}/${latestChannelCheckTask.total_count}`,
+                    `部分 ${latestChannelCheckTask.success_count}/${latestChannelCheckTask.total_count}`,
                     ['group.healthCheck.latest.partial', 'healthCheck.latest.partial']
                 );
             case GroupChannelCheckTaskStatus.Failed:
                 return withTranslationFallback(
                     t('healthCheck.latest.failed', { failed: latestChannelCheckTask.failed_count || latestChannelCheckTask.total_count }),
-                    `最近失败 · ${latestChannelCheckTask.failed_count || latestChannelCheckTask.total_count} 项`,
+                    `失败 ${latestChannelCheckTask.failed_count || latestChannelCheckTask.total_count}`,
                     ['group.healthCheck.latest.failed', 'healthCheck.latest.failed']
                 );
             default:
@@ -635,18 +635,18 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                     </div>
                 )}
 
-                <div className="mb-3 flex flex-wrap items-center gap-2">
+                <div className="mb-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <Button
                         type="button"
                         variant="secondary"
                         onClick={handleCreateBatchChannelCheck}
                         disabled={!group.id || createChannelCheckTask.isPending}
-                        className="rounded-xl"
+                        className="h-8 shrink-0 rounded-xl px-2.5 text-xs"
                     >
-                        <Activity className="size-4" />
+                        <Activity className="size-3.5" />
                         {withTranslationFallback(
                             t('healthCheck.actions.batch'),
-                            '批量测活',
+                            '批量测',
                             ['group.healthCheck.actions.batch', 'healthCheck.actions.batch']
                         )}
                     </Button>
@@ -656,7 +656,7 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                             type="button"
                             onClick={() => openChannelCheckTask(latestChannelCheckTask.id)}
                             className={cn(
-                                'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors',
+                                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium transition-colors',
                                 latestChannelCheckTask.status === GroupChannelCheckTaskStatus.Failed
                                     ? 'border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10'
                                     : latestChannelCheckTask.status === GroupChannelCheckTaskStatus.Success
@@ -664,15 +664,15 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                                         : 'border-primary/20 bg-primary/5 text-primary hover:bg-primary/10'
                             )}
                         >
-                            <Activity className="size-4" />
+                            <Activity className="size-3.5" />
                             <span>{latestChannelCheckLabel}</span>
                         </button>
                     )}
 
                     <Tooltip side="top" sideOffset={10} align="center">
                         <TooltipTrigger asChild>
-                            <div className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-background/80 px-3 py-2">
-                                <span className="text-sm font-medium text-foreground">{autoHealthCheckShortTitle}</span>
+                            <div className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border border-border/70 bg-background/80 px-2.5">
+                                <span className="text-xs font-medium text-foreground">{autoHealthCheckShortTitle}</span>
                                 <Switch
                                     checked={!!group.auto_health_check_enabled}
                                     onCheckedChange={handleToggleAutoHealthCheck}
@@ -684,9 +684,9 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                                     size="icon"
                                     onClick={handleOpenAutoHealthCheckConfig}
                                     disabled={!group.id}
-                                    className="size-7 rounded-lg"
+                                    className="size-6 rounded-lg"
                                 >
-                                    <Settings2 className="size-3.5" />
+                                        <Settings2 className="size-3.5" />
                                 </Button>
                             </div>
                         </TooltipTrigger>

@@ -51,7 +51,9 @@
         "key": "金鑰",
         "model": "價格",
         "log": "日誌",
-        "setting": "設定"
+        "setting": "設定",
+        "toggleThemeToLight": "切換到淺色",
+        "toggleThemeToDark": "切換到深色"
     },
     "common": {
         "copy": {
@@ -395,13 +397,13 @@
                 "failed": "失敗",
                 "createdAt": "建立時間"
             },
-            "latest": {
-                "pending": "待執行 · 共 {total} 項",
-                "running": "測活中 · {done}/{total}",
-                "success": "最近成功 · {success}/{total}",
-                "partial": "最近部分成功 · {success}/{total}",
-                "failed": "最近失敗 · {failed} 項"
-            },
+        "latest": {
+            "pending": "待測 {total}",
+            "running": "測中 {done}/{total}",
+            "success": "成功 {success}/{total}",
+            "partial": "部分 {success}/{total}",
+            "failed": "失敗 {failed}"
+        },
         "status": {
             "pending": "待執行",
             "running": "進行中",
@@ -417,6 +419,7 @@
         },
         "auto": {
             "title": "自動測活同步禁用",
+            "shortTitle": "自動測活",
             "disabled": "關閉後不會自動測活或自動啟停渠道",
             "summary": "每 {interval} 分鐘測一次，連續失敗 {threshold} 次自動禁用",
             "intervalLabel": "每隔多久自動測一次（分鐘）",
