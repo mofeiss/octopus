@@ -263,8 +263,7 @@ func executeGroupChannelCheckTask(taskID int64) {
 	}
 }
 
-func probeGroupChannelCheckItem(channelID int, modelName string) groupChannelCheckProbeResult {
-	result := groupChannelCheckProbeResult{}
+func probeGroupChannelCheckItem(channelID int, modelName string) (result groupChannelCheckProbeResult) {
 	startTime := time.Now()
 	defer func() {
 		result.durationMs = int(time.Since(startTime).Milliseconds())
@@ -276,20 +275,20 @@ func probeGroupChannelCheckItem(channelID int, modelName string) groupChannelChe
 	channel, err := op.ChannelGet(channelID, ctx)
 	if err != nil {
 		result.err = fmt.Errorf("channel not found: %w", err)
-		return result
+		return
 	}
 
 	baseURL := strings.TrimSpace(channel.GetBaseUrl())
 	result.baseURL = baseURL
 	if baseURL == "" {
 		result.err = fmt.Errorf("channel base url is empty")
-		return result
+		return
 	}
 
 	keys := channel.GetChannelKeys()
 	if len(keys) == 0 {
 		result.err = fmt.Errorf("no available channel key")
-		return result
+		return
 	}
 	usedKey := keys[0]
 	result.channelKeyID = usedKey.ID
@@ -300,24 +299,24 @@ func probeGroupChannelCheckItem(channelID int, modelName string) groupChannelChe
 	request, requestKind, err := buildGroupChannelCheckRequest(channel.Type, modelName)
 	if err != nil {
 		result.err = err
-		return result
+		return
 	}
 	result.requestKind = requestKind
 	if err := request.Validate(); err != nil {
 		result.err = fmt.Errorf("invalid check request: %w", err)
-		return result
+		return
 	}
 
 	outAdapter := outbound.Get(channel.Type)
 	if outAdapter == nil {
 		result.err = fmt.Errorf("unsupported channel type: %d", channel.Type)
-		return result
+		return
 	}
 
 	outboundRequest, err := outAdapter.TransformRequest(ctx, request, baseURL, usedKey.ChannelKey)
 	if err != nil {
 		result.err = fmt.Errorf("failed to build outbound request: %w", err)
-		return result
+		return
 	}
 	applyGroupChannelCheckHeaders(outboundRequest, channel)
 
@@ -329,13 +328,13 @@ func probeGroupChannelCheckItem(channelID int, modelName string) groupChannelChe
 	httpClient, err := helper.ChannelHttpClient(channel)
 	if err != nil {
 		result.err = fmt.Errorf("failed to get http client: %w", err)
-		return result
+		return
 	}
 
 	response, err := httpClient.Do(outboundRequest)
 	if err != nil {
 		result.err = fmt.Errorf("failed to send request: %w", err)
-		return result
+		return
 	}
 	defer response.Body.Close()
 
@@ -343,14 +342,14 @@ func probeGroupChannelCheckItem(channelID int, modelName string) groupChannelChe
 	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		result.err = fmt.Errorf("failed to read response body: %w", err)
-		return result
+		return
 	}
 	result.responseContent = trimProbePayload(string(responseBody))
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		result.responsePreview = trimProbePayload(string(responseBody))
 		result.err = fmt.Errorf("upstream error: %d: %s", response.StatusCode, trimProbePayload(string(responseBody)))
-		return result
+		return
 	}
 
 	response.Body = io.NopCloser(bytes.NewReader(responseBody))
@@ -359,14 +358,14 @@ func probeGroupChannelCheckItem(channelID int, modelName string) groupChannelChe
 	if err != nil {
 		result.responsePreview = trimProbePayload(string(responseBody))
 		result.err = fmt.Errorf("failed to parse upstream response: %w", err)
-		return result
+		return
 	}
 
 	result.responsePreview = summarizeGroupChannelCheckResponse(requestKind, internalResponse)
 	if result.responsePreview == "" {
 		result.responsePreview = trimProbePayload(string(responseBody))
 	}
-	return result
+	return
 }
 
 func buildGroupChannelCheckRequest(channelType outbound.OutboundType, modelName string) (*transformerModel.InternalLLMRequest, string, error) {

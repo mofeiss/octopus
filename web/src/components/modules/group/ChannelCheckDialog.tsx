@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, Clock, KeyRound, Loader2, PlayCircle, RefreshCw, Server, XCircle } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, PlayCircle, RefreshCw, Server, XCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
     GroupChannelCheckItemStatus,
@@ -91,31 +91,17 @@ function StatusBadge({ status }: { status?: GroupChannelCheckTaskStatus | GroupC
     );
 }
 
-function MetricCard({
-    icon,
-    label,
-    value,
+function PayloadPanel({
+    title,
+    content,
     className,
 }: {
-    icon: React.ReactNode;
-    label: string;
-    value: string | number;
+    title: string;
+    content?: string;
     className?: string;
 }) {
     return (
-        <div className={cn('rounded-2xl border border-border/60 bg-background/80 p-3', className)}>
-            <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                {icon}
-                <span>{label}</span>
-            </div>
-            <div className="text-lg font-semibold text-foreground">{value}</div>
-        </div>
-    );
-}
-
-function PayloadPanel({ title, content }: { title: string; content?: string }) {
-    return (
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-muted/30">
+        <section className={cn('flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-muted/30', className)}>
             <header className="border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">
                 {title}
             </header>
@@ -145,6 +131,8 @@ export function GroupChannelCheckDialog({
     const task = taskQuery.data;
     const items = useMemo(() => task?.items ?? [], [task?.items]);
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+    const [summaryExpanded, setSummaryExpanded] = useState(false);
+    const [detailExpanded, setDetailExpanded] = useState(false);
 
     const effectiveSelectedItemId = useMemo(() => {
         if (items.length === 0) return null;
@@ -155,13 +143,11 @@ export function GroupChannelCheckDialog({
         return items.find((item) => item.id === effectiveSelectedItemId) ?? items[0];
     }, [effectiveSelectedItemId, items]);
 
-    const completedCount = (task?.success_count ?? 0) + (task?.failed_count ?? 0);
-    const progressPercent = task?.total_count ? Math.round((completedCount / task.total_count) * 100) : 0;
-    const progressLabel = task
+    const progressText = task
         ? withTranslationFallback(
-            t('progress', { done: completedCount, total: task.total_count }),
-            `${completedCount} / ${task.total_count} 已完成`,
-            ['group.healthCheck.progress', 'progress']
+            t('latest.success', { success: task.success_count, total: task.total_count }),
+            `${task.success_count}/${task.total_count}`,
+            ['group.healthCheck.latest.success', 'latest.success']
         )
         : '';
     const titleText = withTranslationFallback(t('title'), '渠道测活', ['group.healthCheck.title', 'title']);
@@ -173,7 +159,6 @@ export function GroupChannelCheckDialog({
     const emptyText = withTranslationFallback(t('empty'), '暂无测活明细', ['group.healthCheck.empty', 'empty']);
     const requestText = withTranslationFallback(t('detail.request'), '请求内容', ['group.healthCheck.detail.request', 'detail.request']);
     const responseText = withTranslationFallback(t('detail.response'), '响应内容', ['group.healthCheck.detail.response', 'detail.response']);
-    const metricsTotalText = withTranslationFallback(t('metrics.total'), '总数', ['group.healthCheck.metrics.total', 'metrics.total']);
     const metricsRunningText = withTranslationFallback(t('metrics.running'), '进行中', ['group.healthCheck.metrics.running', 'metrics.running']);
     const metricsSuccessText = withTranslationFallback(t('metrics.success'), '成功', ['group.healthCheck.metrics.success', 'metrics.success']);
     const metricsFailedText = withTranslationFallback(t('metrics.failed'), '失败', ['group.healthCheck.metrics.failed', 'metrics.failed']);
@@ -223,8 +208,18 @@ export function GroupChannelCheckDialog({
         }
     };
 
+    const handleDialogOpenChange = (nextOpen: boolean) => {
+        if (!nextOpen) {
+            setSummaryExpanded(false);
+            setDetailExpanded(false);
+            setSelectedItemId(null);
+        }
+
+        onOpenChange(nextOpen);
+    };
+
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
+        <Dialog open={open} onOpenChange={handleDialogOpenChange}>
             <DialogContent
                 showCloseButton={false}
                 className="h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] lg:h-[calc(100vh-3rem)] lg:w-[min(1400px,96vw)] lg:max-w-[min(1400px,96vw)] rounded-3xl border-border/70 bg-card px-5 py-4 text-card-foreground custom-shadow flex flex-col overflow-hidden"
@@ -235,8 +230,8 @@ export function GroupChannelCheckDialog({
                     </Button>
                 </DialogClose>
 
-                <div className="mb-4 pr-12">
-                    <div className="mb-2 flex items-center gap-3">
+                <div className="mb-0 pr-12">
+                    <div className="mb-1.5 flex items-center gap-3">
                         <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                             <Activity className="size-5" />
                         </div>
@@ -247,33 +242,47 @@ export function GroupChannelCheckDialog({
                             </DialogDescription>
                         </div>
                         <div className="ml-auto shrink-0">
-                            <StatusBadge status={task?.status} />
+                            <div className="flex items-center gap-2">
+                                {task && (
+                                    <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs">
+                                        {progressText}
+                                    </Badge>
+                                )}
+                                <StatusBadge status={task?.status} />
+                                {task && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => setSummaryExpanded((value) => !value)}
+                                        className="size-8 rounded-xl text-muted-foreground"
+                                    >
+                                        <ChevronDown className={cn('size-4 transition-transform', !summaryExpanded && '-rotate-90')} />
+                                    </Button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    {task && (
-                        <>
-                            <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-5">
-                                <MetricCard icon={<PlayCircle className="size-3.5 text-primary" />} label={metricsTotalText} value={task.total_count} />
-                                <MetricCard icon={<Loader2 className="size-3.5 text-primary" />} label={metricsRunningText} value={task.running_count} />
-                                <MetricCard icon={<CheckCircle2 className="size-3.5 text-emerald-500" />} label={metricsSuccessText} value={task.success_count} />
-                                <MetricCard icon={<AlertCircle className="size-3.5 text-destructive" />} label={metricsFailedText} value={task.failed_count} />
-                                <MetricCard icon={<Clock className="size-3.5 text-muted-foreground" />} label={metricsCreatedAtText} value={formatTaskTime(task.created_at)} />
+                    {task && summaryExpanded && (
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 pl-[3.25rem] pr-1 text-xs text-muted-foreground md:grid-cols-4">
+                            <div className="flex items-center gap-2">
+                                <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
+                                <span>{metricsSuccessText} {task.success_count}</span>
                             </div>
-
-                            <div className="rounded-2xl border border-border/70 bg-background/70 p-3">
-                                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                                    <span>{progressLabel}</span>
-                                    <span>{progressPercent}%</span>
-                                </div>
-                                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                                    <div
-                                        className="h-full rounded-full bg-linear-to-r from-primary to-emerald-500 transition-all duration-300"
-                                        style={{ width: `${progressPercent}%` }}
-                                    />
-                                </div>
+                            <div className="flex items-center gap-2">
+                                <AlertCircle className="size-3.5 shrink-0 text-destructive" />
+                                <span>{metricsFailedText} {task.failed_count}</span>
                             </div>
-                        </>
+                            <div className="flex items-center gap-2">
+                                <Loader2 className="size-3.5 shrink-0 text-primary" />
+                                <span>{metricsRunningText} {task.running_count}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Clock className="size-3.5 shrink-0 text-muted-foreground" />
+                                <span className="truncate">{metricsCreatedAtText} {formatTaskTime(task.created_at)}</span>
+                            </div>
+                        </div>
                     )}
                 </div>
 
@@ -300,49 +309,54 @@ export function GroupChannelCheckDialog({
                     )}
 
                     {!creating && task && (
-                        <div className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+                        <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-3 xl:grid-cols-[340px_minmax(0,1fr)] xl:grid-rows-1 xl:gap-4">
                             <aside className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border/70 bg-muted/20">
                                 <div className="border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">
                                     {resultListText}
                                 </div>
-                                <div className="min-h-0 flex-1 overflow-auto p-2">
+                                <div className="min-h-0 flex-1 overflow-auto p-2 space-y-2">
                                     {items.map((item) => (
                                         <button
                                             key={item.id}
                                             type="button"
-                                            onClick={() => setSelectedItemId(item.id)}
+                                            onClick={() => {
+                                                setSelectedItemId(item.id);
+                                                setDetailExpanded(false);
+                                            }}
                                             className={cn(
-                                                'rounded-2xl border px-3 py-3 text-left transition-colors',
+                                                'w-full min-w-0 overflow-hidden rounded-2xl border px-3 py-2.5 text-left transition-colors',
                                                 selectedItem?.id === item.id
-                                                    ? 'border-primary/40 bg-primary/5'
-                                                    : 'border-transparent hover:border-border hover:bg-background/70'
+                                                    ? 'border-primary/40 bg-primary/5 shadow-xs'
+                                                    : 'border-border/70 bg-background/60 hover:border-border hover:bg-background/80'
                                             )}
                                         >
-                                            <div className="mb-1 flex items-start gap-2">
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="truncate text-sm font-semibold text-foreground">
+                                            <div className="mb-1 flex items-center gap-2">
+                                                <div className="min-w-0 flex flex-1 items-center gap-1.5 overflow-hidden">
+                                                    <span className="truncate text-sm font-semibold text-foreground">
                                                         {item.channel_name}
-                                                    </div>
-                                                    <div className="truncate text-xs text-muted-foreground">
-                                                        {item.model_name}
-                                                    </div>
+                                                    </span>
+                                                    {item.model_name && (
+                                                        <>
+                                                            <span className="shrink-0 text-muted-foreground/40">/</span>
+                                                            <span className="max-w-[40%] truncate text-xs text-muted-foreground">
+                                                                {item.model_name}
+                                                            </span>
+                                                        </>
+                                                    )}
+                                                    {item.duration_ms > 0 && (
+                                                        <span className="shrink-0 text-xs text-muted-foreground">
+                                                            耗时 {formatDuration(item.duration_ms)}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <StatusBadge status={item.status} />
                                             </div>
-                                            <div className="space-y-1 text-xs text-muted-foreground">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Clock className="size-3.5 shrink-0" />
-                                                    <span>{formatDuration(item.duration_ms)}</span>
-                                                </div>
-                                                {(item.error || item.response_preview) && (
-                                                    <p className={cn(
-                                                        'line-clamp-2 leading-relaxed',
-                                                        item.error ? 'text-destructive' : 'text-muted-foreground'
-                                                    )}>
-                                                        {item.error || item.response_preview}
-                                                    </p>
-                                                )}
-                                            </div>
+                                            <p className={cn(
+                                                'max-w-full overflow-hidden text-ellipsis whitespace-nowrap line-clamp-1 text-xs leading-relaxed',
+                                                item.error ? 'text-destructive' : 'text-muted-foreground'
+                                            )}>
+                                                {item.error || item.response_preview || '-'}
+                                            </p>
                                         </button>
                                     ))}
                                 </div>
@@ -368,43 +382,72 @@ export function GroupChannelCheckDialog({
 
                                 {selectedItem && (
                                     <div className="flex h-full min-h-0 flex-col">
-                                        <div className="border-b border-border/70 px-4 py-4">
-                                            <div className="mb-2 flex flex-wrap items-center gap-2">
-                                                <h3 className="text-base font-semibold text-foreground">{selectedItem.channel_name}</h3>
-                                                <StatusBadge status={selectedItem.status} />
-                                                <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs">
-                                                    {selectedItem.model_name}
-                                                </Badge>
+                                        <div className="border-b border-border/70 px-4 py-3 sm:py-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <h3 className="truncate text-base font-semibold text-foreground">{selectedItem.channel_name}</h3>
+                                                        <StatusBadge status={selectedItem.status} />
+                                                        <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs">
+                                                            {selectedItem.model_name}
+                                                        </Badge>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => setDetailExpanded((value) => !value)}
+                                                    className="size-7 rounded-lg text-muted-foreground"
+                                                >
+                                                    <ChevronDown className={cn('size-4 transition-transform', !detailExpanded && '-rotate-90')} />
+                                                </Button>
                                             </div>
 
-                                        <div className="grid grid-cols-1 gap-3 text-xs text-muted-foreground md:grid-cols-2 2xl:grid-cols-4">
-                                                <div className="flex items-center gap-2">
-                                                    <Server className="size-3.5 shrink-0" />
-                                                    <span className="truncate">{selectedItem.request_url || selectedItem.base_url || '-'}</span>
+                                            {detailExpanded && (
+                                                <div className="mt-3 space-y-3">
+                                                    <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:gap-3 md:grid-cols-2 2xl:grid-cols-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <Server className="size-3.5 shrink-0" />
+                                                            <span className="truncate">{selectedItem.request_url || selectedItem.base_url || '-'}</span>
+                                                        </div>
+                                                        {selectedItem.duration_ms > 0 && (
+                                                            <div className="flex items-center gap-2">
+                                                                <Clock className="size-3.5 shrink-0" />
+                                                                <span>{formatDurationText(formatDuration(selectedItem.duration_ms))}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex items-center gap-2">
+                                                            <PlayCircle className="size-3.5 shrink-0" />
+                                                            <span>{formatStatusCodeText(selectedItem.response_status_code || '-')}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <KeyRound className="size-3.5 shrink-0" />
+                                                            <span className="truncate">
+                                                                {selectedItem.channel_key_preview
+                                                                    ? `${selectedItem.channel_key_index || '-'} · ${selectedItem.channel_key_preview}${selectedItem.channel_key_remark ? ` · ${selectedItem.channel_key_remark}` : ''}`
+                                                                    : '-'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="border-t border-border/70 pt-3">
+                                                        <div className="mb-2 text-xs font-medium text-foreground">{requestText}</div>
+                                                        <pre className="max-h-40 overflow-auto rounded-xl border border-border/70 bg-background/70 p-3 text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+                                                            {selectedItem.request_content?.trim() ? selectedItem.request_content : '-'}
+                                                        </pre>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Clock className="size-3.5 shrink-0" />
-                                                    <span>{formatDurationText(formatDuration(selectedItem.duration_ms))}</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <PlayCircle className="size-3.5 shrink-0" />
-                                                    <span>{formatStatusCodeText(selectedItem.response_status_code || '-')}</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <KeyRound className="size-3.5 shrink-0" />
-                                                    <span className="truncate">
-                                                        {selectedItem.channel_key_preview
-                                                            ? `${selectedItem.channel_key_index || '-'} · ${selectedItem.channel_key_preview}${selectedItem.channel_key_remark ? ` · ${selectedItem.channel_key_remark}` : ''}`
-                                                            : '-'}
-                                                    </span>
-                                                </div>
-                                            </div>
+                                            )}
                                         </div>
 
-                                        <div className="min-h-0 flex-1 overflow-auto p-4">
-                                            <div className="flex min-h-full flex-col gap-2">
-                                                <PayloadPanel title={requestText} content={selectedItem.request_content} />
-                                                <PayloadPanel title={responseText} content={selectedItem.response_content} />
+                                        <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">
+                                            <div className="flex min-h-full flex-col">
+                                                <PayloadPanel
+                                                    title={responseText}
+                                                    content={selectedItem.response_content}
+                                                    className="flex-1"
+                                                />
                                             </div>
                                         </div>
                                     </div>
