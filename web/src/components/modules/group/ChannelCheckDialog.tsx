@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, RefreshCw, Server, XIcon } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, RefreshCw, XIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
+    type GroupChannelCheckAttempt,
+    type GroupChannelCheckTaskItem,
     GroupChannelCheckItemStatus,
     GroupChannelCheckTaskStatus,
     useSyncGroupChannelCheckTaskStatus,
     useGroupChannelCheckTaskDetail,
 } from '@/api/endpoints/group-channel-check';
+import { CopyIconButton } from '@/components/common/CopyButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -40,6 +43,83 @@ function formatDuration(durationMs?: number) {
     if (!durationMs) return '-';
     if (durationMs < 1000) return `${durationMs}ms`;
     return `${(durationMs / 1000).toFixed(2)}s`;
+}
+
+function buildFallbackAttempt(item: GroupChannelCheckTaskItem): GroupChannelCheckAttempt {
+    return {
+        status: item.status,
+        channel_key_id: item.channel_key_id,
+        channel_key_index: item.channel_key_index,
+        channel_key_preview: item.channel_key_preview,
+        channel_key_remark: item.channel_key_remark,
+        response_status_code: item.response_status_code,
+        response_content: item.response_content?.trim() || item.error || item.response_preview || '-',
+        error: item.error,
+    };
+}
+
+function getAttemptTone(status?: GroupChannelCheckItemStatus) {
+    switch (status) {
+        case GroupChannelCheckItemStatus.Success:
+            return {
+                card: 'border-emerald-500/25 bg-emerald-500/5',
+                divider: 'border-emerald-500/20',
+                accent: 'text-emerald-600',
+                body: 'text-foreground',
+            };
+        case GroupChannelCheckItemStatus.Failed:
+            return {
+                card: 'border-destructive/25 bg-destructive/5',
+                divider: 'border-destructive/20',
+                accent: 'text-destructive',
+                body: 'text-destructive',
+            };
+        case GroupChannelCheckItemStatus.Running:
+            return {
+                card: 'border-primary/25 bg-primary/5',
+                divider: 'border-primary/20',
+                accent: 'text-primary',
+                body: 'text-foreground',
+            };
+        default:
+            return {
+                card: 'border-border/70 bg-background/60',
+                divider: 'border-border/70',
+                accent: 'text-muted-foreground',
+                body: 'text-muted-foreground',
+            };
+    }
+}
+
+function ChannelKeyBadge({
+    index,
+    remark,
+    className,
+}: {
+    index?: number;
+    remark?: string;
+    className?: string;
+}) {
+    if (!(index && index > 0) && !remark?.trim()) return null;
+
+    return (
+        <Badge
+            variant="secondary"
+            className={cn('shrink-0 text-xs px-1.5 py-0 inline-flex items-center gap-0.5', className)}
+            title={remark?.trim() ? `Key ${index || '-'} · ${remark.trim()}` : `Key ${index || '-'}`}
+        >
+            <KeyRound className="size-3" />
+            <span>{index || '-'}</span>
+            {remark?.trim() && (
+                <>
+                    <span className="text-muted-foreground/50">/</span>
+                    <span className="max-w-24 truncate">
+                        {remark.trim()}
+                    </span>
+                </>
+            )}
+        </Badge>
+    );
 }
 
 function StatusBadge({ status }: { status?: GroupChannelCheckTaskStatus | GroupChannelCheckItemStatus }) {
@@ -112,36 +192,46 @@ export function GroupChannelCheckDialog({
     const task = taskQuery.data;
     const items = useMemo(() => task?.items ?? [], [task?.items]);
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-    const [summaryExpandedOverride, setSummaryExpandedOverride] = useState<boolean | null>(null);
     const [detailExpandedOverride, setDetailExpandedOverride] = useState<boolean | null>(null);
-    const [isDesktop, setIsDesktop] = useState(false);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const mediaQuery = window.matchMedia('(min-width: 1024px)');
-        const updateDesktopState = () => {
-            setIsDesktop(mediaQuery.matches);
-        };
-
-        updateDesktopState();
-        mediaQuery.addEventListener('change', updateDesktopState);
-
-        return () => {
-            mediaQuery.removeEventListener('change', updateDesktopState);
-        };
-    }, []);
 
     const effectiveSelectedItemId = useMemo(() => {
         if (items.length === 0) return null;
-        return items.some((item) => item.id === selectedItemId) ? selectedItemId : (items[0]?.id ?? null);
+        return items.some((item) => item.id === selectedItemId) ? selectedItemId : null;
     }, [items, selectedItemId]);
 
+    const sortedItems = useMemo(() => {
+        const statusRank = (status?: GroupChannelCheckItemStatus) => {
+            switch (status) {
+                case GroupChannelCheckItemStatus.Success:
+                    return 0;
+                case GroupChannelCheckItemStatus.Running:
+                    return 1;
+                case GroupChannelCheckItemStatus.Pending:
+                    return 2;
+                case GroupChannelCheckItemStatus.Failed:
+                    return 3;
+                default:
+                    return 4;
+            }
+        };
+
+        return [...items].sort((a, b) => {
+            const rankDiff = statusRank(a.status) - statusRank(b.status);
+            if (rankDiff !== 0) return rankDiff;
+            return a.id - b.id;
+        });
+    }, [items]);
+
     const selectedItem = useMemo(() => {
-        return items.find((item) => item.id === effectiveSelectedItemId) ?? items[0];
-    }, [effectiveSelectedItemId, items]);
-    const summaryExpanded = summaryExpandedOverride ?? true;
-    const detailExpanded = detailExpandedOverride ?? isDesktop;
+        return sortedItems.find((item) => item.id === effectiveSelectedItemId) ?? sortedItems[0];
+    }, [effectiveSelectedItemId, sortedItems]);
+    const detailExpanded = detailExpandedOverride ?? true;
+    const selectedItemAttempts = useMemo(() => {
+        if (!selectedItem) return [];
+        return selectedItem.attempts && selectedItem.attempts.length > 0
+            ? selectedItem.attempts
+            : [buildFallbackAttempt(selectedItem)];
+    }, [selectedItem]);
 
     const progressText = task
         ? withTranslationFallback(
@@ -157,18 +247,13 @@ export function GroupChannelCheckDialog({
     const loadingText = withTranslationFallback(t('loading'), '正在加载测活结果...', ['group.healthCheck.loading', 'loading']);
     const resultListText = withTranslationFallback(t('resultList'), '测活结果', ['group.healthCheck.resultList', 'resultList']);
     const emptyText = withTranslationFallback(t('empty'), '暂无测活明细', ['group.healthCheck.empty', 'empty']);
+    const apiAddressText = withTranslationFallback(t('detail.apiAddress'), 'API 地址', ['group.healthCheck.detail.apiAddress', 'detail.apiAddress']);
     const requestText = withTranslationFallback(t('detail.request'), '请求内容', ['group.healthCheck.detail.request', 'detail.request']);
-    const responseText = withTranslationFallback(t('detail.response'), '响应内容', ['group.healthCheck.detail.response', 'detail.response']);
     const metricsRunningText = withTranslationFallback(t('metrics.running'), '进行中', ['group.healthCheck.metrics.running', 'metrics.running']);
     const metricsSuccessText = withTranslationFallback(t('metrics.success'), '成功', ['group.healthCheck.metrics.success', 'metrics.success']);
     const metricsFailedText = withTranslationFallback(t('metrics.failed'), '失败', ['group.healthCheck.metrics.failed', 'metrics.failed']);
     const metricsCreatedAtText = withTranslationFallback(t('metrics.createdAt'), '创建时间', ['group.healthCheck.metrics.createdAt', 'metrics.createdAt']);
 
-    const formatDurationText = (value: string) => withTranslationFallback(
-        t('detail.duration', { value }),
-        `耗时 ${value}`,
-        ['group.healthCheck.detail.duration', 'detail.duration']
-    );
     const syncStatusText = withTranslationFallback(
         t('actions.syncStatus'),
         '按测活结果同步启用状态',
@@ -210,7 +295,6 @@ export function GroupChannelCheckDialog({
 
     const handleDialogOpenChange = (nextOpen: boolean) => {
         if (!nextOpen) {
-            setSummaryExpandedOverride(null);
             setDetailExpandedOverride(null);
             setSelectedItemId(null);
         }
@@ -243,17 +327,6 @@ export function GroupChannelCheckDialog({
                                     </Badge>
                                 )}
                                 <StatusBadge status={task?.status} />
-                                {task && (
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => setSummaryExpandedOverride(!summaryExpanded)}
-                                        className="size-8 rounded-xl bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
-                                    >
-                                        <ChevronDown className={cn('size-4 transition-transform', !summaryExpanded && '-rotate-90')} />
-                                    </Button>
-                                )}
                                 <DialogClose asChild>
                                     <Button
                                         variant="ghost"
@@ -267,7 +340,7 @@ export function GroupChannelCheckDialog({
                         </div>
                     </div>
 
-                    {task && summaryExpanded && (
+                    {task && (
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-0 pr-1 text-[11px] text-muted-foreground sm:pl-[3.25rem] sm:text-xs">
                             <div className="flex items-center gap-1.5 whitespace-nowrap">
                                 <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
@@ -312,19 +385,19 @@ export function GroupChannelCheckDialog({
                     )}
 
                     {!creating && task && (
-                        <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-3 xl:grid-cols-[340px_minmax(0,1fr)] xl:grid-rows-1 xl:gap-4">
+                        <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3 xl:grid-cols-[340px_minmax(0,1fr)] xl:grid-rows-1 xl:gap-4">
                             <aside className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-border/70 bg-muted/20">
                                 <div className="border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">
                                     {resultListText}
                                 </div>
                                 <div className="min-h-0 flex-1 overflow-auto p-2 space-y-2">
-                                    {items.map((item) => (
+                                    {sortedItems.map((item) => (
                                         <button
                                             key={item.id}
                                             type="button"
                                             onClick={() => {
                                                 setSelectedItemId(item.id);
-                                                setDetailExpandedOverride(isDesktop);
+                                                setDetailExpandedOverride(true);
                                             }}
                                             className={cn(
                                                 'w-full min-w-0 overflow-hidden rounded-2xl border px-3 py-2.5 text-left transition-colors',
@@ -346,13 +419,23 @@ export function GroupChannelCheckDialog({
                                                             </span>
                                                         </>
                                                     )}
-                                                    {item.duration_ms > 0 && (
-                                                        <span className="shrink-0 text-xs text-muted-foreground">
-                                                            耗时 {formatDuration(item.duration_ms)}
-                                                        </span>
-                                                    )}
                                                 </div>
-                                                <StatusBadge status={item.status} />
+                                                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                                                    {item.duration_ms > 0 && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="rounded-full border border-border/70 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+                                                        >
+                                                            {formatDuration(item.duration_ms)}
+                                                        </Badge>
+                                                    )}
+                                                    <ChannelKeyBadge
+                                                        index={item.channel_key_index}
+                                                        remark={item.channel_key_remark}
+                                                        className="max-w-[10rem]"
+                                                    />
+                                                    <StatusBadge status={item.status} />
+                                                </div>
                                             </div>
                                             <p className={cn(
                                                 'max-w-full overflow-hidden text-ellipsis whitespace-nowrap line-clamp-1 text-xs leading-relaxed',
@@ -402,15 +485,11 @@ export function GroupChannelCheckDialog({
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <h3 className="truncate text-base font-semibold text-foreground">{selectedItem.channel_name}</h3>
-                                                        <StatusBadge status={selectedItem.status} />
                                                         {selectedItem.model_name && (
                                                             <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs">
                                                                 {selectedItem.model_name}
                                                             </Badge>
                                                         )}
-                                                        <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                                                            {selectedItem.response_status_code || '-'}
-                                                        </span>
                                                     </div>
                                                 </div>
                                                 <Button
@@ -425,46 +504,74 @@ export function GroupChannelCheckDialog({
                                             </div>
 
                                             {detailExpanded && (
-                                                <div className="mt-3 space-y-3">
-                                                    <div className="space-y-2 text-xs text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1.4fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-3 lg:space-y-0">
-                                                        <div className="flex min-w-0 items-center gap-2">
-                                                            <Server className="size-3.5 shrink-0" />
-                                                            <span className="truncate">{selectedItem.request_url || selectedItem.base_url || '-'}</span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-2 lg:contents">
-                                                            <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
-                                                                <Clock className="size-3.5 shrink-0" />
-                                                                <span>{formatDurationText(selectedItem.duration_ms > 0 ? formatDuration(selectedItem.duration_ms) : '-')}</span>
-                                                            </div>
-                                                            <div className="flex min-w-0 items-center gap-2">
-                                                                <KeyRound className="size-3.5 shrink-0" />
-                                                                <span className="truncate">
-                                                                    {selectedItem.channel_key_preview
-                                                                        ? `${selectedItem.channel_key_index || '-'} · ${selectedItem.channel_key_preview}${selectedItem.channel_key_remark ? ` · ${selectedItem.channel_key_remark}` : ''}`
-                                                                        : '-'}
-                                                                </span>
-                                                            </div>
+                                                <div className="mt-3 space-y-2 border-t border-border/70 pt-3 text-xs">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="shrink-0 text-muted-foreground">{apiAddressText}</span>
+                                                        <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                                            {selectedItem.request_url || selectedItem.base_url || '-'}
                                                         </div>
                                                     </div>
-
-                                                    <div className="border-t border-border/70 pt-3">
-                                                        <div className="mb-2 text-xs font-medium text-foreground">{requestText}</div>
-                                                        <pre className="max-h-40 overflow-auto rounded-xl border border-border/70 bg-background/70 p-3 text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="shrink-0 text-muted-foreground">{requestText}</span>
+                                                        <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                                             {selectedItem.request_content?.trim() ? selectedItem.request_content : '-'}
-                                                        </pre>
+                                                        </div>
+                                                        <CopyIconButton
+                                                            text={selectedItem.request_content?.trim() ? selectedItem.request_content : ''}
+                                                            className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                                            copyIconClassName="size-3.5"
+                                                            checkIconClassName="size-3.5 text-primary"
+                                                        />
                                                     </div>
                                                 </div>
                                             )}
                                         </div>
 
                                         <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">
-                                            <div className="flex min-h-full flex-col">
-                                                <div className="mb-2 text-xs font-medium text-foreground">{responseText}</div>
-                                                <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-background/70">
-                                                    <pre className="p-3 text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
-                                                        {selectedItem.response_content?.trim() ? selectedItem.response_content : '-'}
-                                                    </pre>
-                                                </div>
+                                            <div className="flex min-h-full flex-col gap-3">
+                                                {selectedItemAttempts.map((attempt, index) => {
+                                                    const tone = getAttemptTone(attempt.status);
+                                                    const responseContent = attempt.response_content?.trim() || attempt.error || '-';
+
+                                                    return (
+                                                        <div
+                                                            key={`${selectedItem.id}-${attempt.channel_key_id ?? attempt.channel_key_index ?? index}-${index}`}
+                                                            className={cn('overflow-hidden rounded-2xl border', tone.card)}
+                                                        >
+                                                            <div className={cn('flex items-center gap-2 px-3 py-2 text-xs', tone.divider, 'border-b')}>
+                                                                <span className={cn('shrink-0 font-semibold', tone.accent)}>
+                                                                    {attempt.response_status_code || '-'}
+                                                                </span>
+                                                                <span className="shrink-0 text-muted-foreground/40">/</span>
+                                                                <ChannelKeyBadge
+                                                                    index={attempt.channel_key_index}
+                                                                    remark={attempt.channel_key_remark}
+                                                                    className="max-w-[12rem]"
+                                                                />
+                                                                <span className="shrink-0 text-muted-foreground/40">/</span>
+                                                                <span className="min-w-0 truncate text-muted-foreground">
+                                                                    {attempt.channel_key_preview || '-'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-start gap-3 px-3 py-3">
+                                                                <pre className={cn('min-w-0 flex-1 whitespace-pre-wrap break-all text-xs leading-relaxed', tone.body)}>
+                                                                    {responseContent}
+                                                                </pre>
+                                                                <CopyIconButton
+                                                                    text={responseContent === '-' ? '' : responseContent}
+                                                                    className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                                                                    copyIconClassName="size-3.5"
+                                                                    checkIconClassName="size-3.5 text-primary"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {selectedItemAttempts.length === 0 && (
+                                                    <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-border/70 bg-background/60 text-sm text-muted-foreground">
+                                                        {emptyText}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

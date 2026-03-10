@@ -77,6 +77,18 @@ type GroupChannelCheckTaskItem struct {
 	Error              string                      `json:"error"`
 	StartedAt          int64                       `json:"started_at"`
 	FinishedAt         int64                       `json:"finished_at"`
+	Attempts           []GroupChannelCheckAttempt  `json:"attempts,omitempty" gorm:"serializer:json"` // [fork] 多 key 测活尝试明细
+}
+
+type GroupChannelCheckAttempt struct {
+	Status             GroupChannelCheckItemStatus `json:"status"`
+	ChannelKeyID       int                         `json:"channel_key_id,omitempty"`
+	ChannelKeyIndex    int                         `json:"channel_key_index,omitempty"`
+	ChannelKeyPreview  string                      `json:"channel_key_preview,omitempty"`
+	ChannelKeyRemark   string                      `json:"channel_key_remark,omitempty"`
+	ResponseStatusCode int                         `json:"response_status_code"`
+	ResponseContent    string                      `json:"response_content"`
+	Error              string                      `json:"error"`
 }
 
 type GroupChannelCheckCreateRequest struct {

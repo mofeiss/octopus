@@ -93,6 +93,31 @@ func GroupChannelCheckTaskItemUpdate(itemID int64, updates map[string]any, ctx c
 		Updates(updates).Error
 }
 
+func GroupChannelCheckTaskItemSaveResult(item model.GroupChannelCheckTaskItem, ctx context.Context) error {
+	return db.GetDB().WithContext(ctx).
+		Model(&model.GroupChannelCheckTaskItem{}).
+		Where("id = ?", item.ID).
+		Select(
+			"status",
+			"request_kind",
+			"request_url",
+			"base_url",
+			"channel_key_id",
+			"channel_key_index",
+			"channel_key_preview",
+			"channel_key_remark",
+			"response_status_code",
+			"duration_ms",
+			"request_content",
+			"response_preview",
+			"response_content",
+			"error",
+			"finished_at",
+			"attempts",
+		).
+		Updates(&item).Error
+}
+
 func GroupChannelCheckTaskRefreshSummary(taskID int64, ctx context.Context) (*model.GroupChannelCheckTask, error) {
 	var task model.GroupChannelCheckTask
 	if err := db.GetDB().WithContext(ctx).First(&task, "id = ?", taskID).Error; err != nil {

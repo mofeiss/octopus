@@ -47,6 +47,18 @@ export interface GroupChannelCheckTaskItem {
     error: string;
     started_at: number;
     finished_at: number;
+    attempts?: GroupChannelCheckAttempt[];
+}
+
+export interface GroupChannelCheckAttempt {
+    status: GroupChannelCheckItemStatus;
+    channel_key_id?: number;
+    channel_key_index?: number;
+    channel_key_preview?: string;
+    channel_key_remark?: string;
+    response_status_code: number;
+    response_content: string;
+    error: string;
 }
 
 export interface GroupChannelCheckTask {

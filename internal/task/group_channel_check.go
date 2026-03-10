@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,6 +48,7 @@ type groupChannelCheckProbeResult struct {
 	requestContent     string
 	responsePreview    string
 	responseContent    string
+	attempts           []model.GroupChannelCheckAttempt
 	err                error
 }
 
@@ -179,35 +181,6 @@ func executeGroupChannelCheckTask(taskID int64) {
 
 		result := probeGroupChannelCheckItem(item.ChannelID, item.ModelName)
 		finishedAt := time.Now().Unix()
-		updates := map[string]any{
-			"request_kind":         result.requestKind,
-			"request_url":          result.requestURL,
-			"base_url":             result.baseURL,
-			"channel_key_id":       result.channelKeyID,
-			"channel_key_index":    result.channelKeyIndex,
-			"channel_key_preview":  result.channelKeyPreview,
-			"channel_key_remark":   result.channelKeyRemark,
-			"response_status_code": result.responseStatusCode,
-			"duration_ms":          result.durationMs,
-			"request_content":      result.requestContent,
-			"response_preview":     result.responsePreview,
-			"response_content":     result.responseContent,
-			"finished_at":          finishedAt,
-		}
-		if result.err != nil {
-			updates["status"] = model.GroupChannelCheckItemStatusFailed
-			updates["error"] = result.err.Error()
-			lastErr = result.err.Error()
-		} else {
-			updates["status"] = model.GroupChannelCheckItemStatusSuccess
-			updates["error"] = ""
-		}
-
-		if err := op.GroupChannelCheckTaskItemUpdate(item.ID, updates, ctx); err != nil {
-			log.Warnf("failed to update group channel check item result (item=%d): %v", item.ID, err)
-			lastErr = err.Error()
-			continue
-		}
 		finishedItem := *item
 		finishedItem.RequestKind = result.requestKind
 		finishedItem.RequestURL = result.requestURL
@@ -222,13 +195,22 @@ func executeGroupChannelCheckTask(taskID int64) {
 		finishedItem.ResponsePreview = result.responsePreview
 		finishedItem.ResponseContent = result.responseContent
 		finishedItem.FinishedAt = finishedAt
+		finishedItem.Attempts = result.attempts
 		if result.err != nil {
 			finishedItem.Status = model.GroupChannelCheckItemStatusFailed
 			finishedItem.Error = result.err.Error()
+			lastErr = result.err.Error()
 		} else {
 			finishedItem.Status = model.GroupChannelCheckItemStatusSuccess
 			finishedItem.Error = ""
 		}
+
+		if err := op.GroupChannelCheckTaskItemSaveResult(finishedItem, ctx); err != nil {
+			log.Warnf("failed to update group channel check item result (item=%d): %v", item.ID, err)
+			lastErr = err.Error()
+			continue
+		}
+
 		group, groupErr := op.GroupGet(task.GroupID, ctx)
 		if groupErr == nil {
 			if err := op.GroupChannelCheckStateUpsertByItem(*group, finishedItem, ctx); err != nil {
@@ -290,11 +272,6 @@ func probeGroupChannelCheckItem(channelID int, modelName string) (result groupCh
 		result.err = fmt.Errorf("no available channel key")
 		return
 	}
-	usedKey := keys[0]
-	result.channelKeyID = usedKey.ID
-	result.channelKeyIndex = findChannelKeyIndex(channel.Keys, usedKey.ID)
-	result.channelKeyPreview = buildChannelKeyPreview(usedKey.ChannelKey)
-	result.channelKeyRemark = usedKey.Remark
 
 	request, requestKind, err := buildGroupChannelCheckRequest(channel.Type, modelName)
 	if err != nil {
@@ -313,7 +290,81 @@ func probeGroupChannelCheckItem(channelID int, modelName string) (result groupCh
 		return
 	}
 
-	outboundRequest, err := outAdapter.TransformRequest(ctx, request, baseURL, usedKey.ChannelKey)
+	// [fork] 多 key 渠道测活对齐 relay 语义：任意 1 个 key 成功即视为渠道可用。
+	attempts := make([]model.GroupChannelCheckAttempt, 0, len(keys))
+	failures := make([]string, 0, len(keys))
+	for _, usedKey := range keys {
+		attempt := probeGroupChannelCheckItemWithKey(ctx, channel, request, requestKind, outAdapter, usedKey)
+		attempts = append(attempts, buildGroupChannelCheckAttempt(attempt))
+		if attempt.err == nil {
+			attempt.attempts = attempts
+			return attempt
+		}
+		result = attempt
+		failures = append(failures, summarizeGroupChannelCheckKeyFailure(attempt))
+	}
+
+	result.attempts = attempts
+	if len(failures) > 0 {
+		summary := fmt.Sprintf("all %d keys failed", len(keys))
+		result.responsePreview = summary
+		result.responseContent = trimProbePayload(summary + "\n\n" + strings.Join(failures, "\n\n"))
+		if result.err != nil {
+			result.err = fmt.Errorf("%s: %w", summary, result.err)
+		} else {
+			result.err = errors.New(summary)
+		}
+	}
+	return
+}
+
+func buildGroupChannelCheckAttempt(result groupChannelCheckProbeResult) model.GroupChannelCheckAttempt {
+	status := model.GroupChannelCheckItemStatusSuccess
+	if result.err != nil {
+		status = model.GroupChannelCheckItemStatusFailed
+	}
+
+	responseContent := strings.TrimSpace(result.responseContent)
+	if responseContent == "" {
+		responseContent = strings.TrimSpace(result.responsePreview)
+	}
+	if responseContent == "" && result.err != nil {
+		responseContent = strings.TrimSpace(result.err.Error())
+	}
+
+	return model.GroupChannelCheckAttempt{
+		Status:             status,
+		ChannelKeyID:       result.channelKeyID,
+		ChannelKeyIndex:    result.channelKeyIndex,
+		ChannelKeyPreview:  result.channelKeyPreview,
+		ChannelKeyRemark:   result.channelKeyRemark,
+		ResponseStatusCode: result.responseStatusCode,
+		ResponseContent:    trimProbePayload(responseContent),
+		Error: func() string {
+			if result.err == nil {
+				return ""
+			}
+			return result.err.Error()
+		}(),
+	}
+}
+
+func probeGroupChannelCheckItemWithKey(
+	ctx context.Context,
+	channel *model.Channel,
+	request *transformerModel.InternalLLMRequest,
+	requestKind string,
+	outAdapter transformerModel.Outbound,
+	usedKey model.ChannelKey,
+) (result groupChannelCheckProbeResult) {
+	result.requestKind = requestKind
+	result.baseURL = strings.TrimSpace(channel.GetBaseUrl())
+	result.channelKeyID = usedKey.ID
+	result.channelKeyIndex = findChannelKeyIndex(channel.Keys, usedKey.ID)
+	result.channelKeyPreview = buildChannelKeyPreview(usedKey.ChannelKey)
+	result.channelKeyRemark = usedKey.Remark
+
+	outboundRequest, err := outAdapter.TransformRequest(ctx, request, result.baseURL, usedKey.ChannelKey)
 	if err != nil {
 		result.err = fmt.Errorf("failed to build outbound request: %w", err)
 		return
@@ -366,6 +417,39 @@ func probeGroupChannelCheckItem(channelID int, modelName string) (result groupCh
 		result.responsePreview = trimProbePayload(string(responseBody))
 	}
 	return
+}
+
+func summarizeGroupChannelCheckKeyFailure(result groupChannelCheckProbeResult) string {
+	labelParts := make([]string, 0, 3)
+	if result.channelKeyIndex > 0 {
+		labelParts = append(labelParts, fmt.Sprintf("key %d", result.channelKeyIndex))
+	} else {
+		labelParts = append(labelParts, "key")
+	}
+	if result.channelKeyPreview != "" {
+		labelParts = append(labelParts, result.channelKeyPreview)
+	}
+	if strings.TrimSpace(result.channelKeyRemark) != "" {
+		labelParts = append(labelParts, result.channelKeyRemark)
+	}
+
+	statusText := "-"
+	if result.responseStatusCode > 0 {
+		statusText = fmt.Sprintf("%d", result.responseStatusCode)
+	}
+
+	reason := strings.TrimSpace(result.responseContent)
+	if reason == "" {
+		reason = strings.TrimSpace(result.responsePreview)
+	}
+	if reason == "" && result.err != nil {
+		reason = strings.TrimSpace(result.err.Error())
+	}
+	if reason == "" {
+		reason = "unknown error"
+	}
+
+	return trimProbePayload(fmt.Sprintf("%s\nstatus %s\n%s", strings.Join(labelParts, " · "), statusText, reason))
 }
 
 func buildGroupChannelCheckRequest(channelType outbound.OutboundType, modelName string) (*transformerModel.InternalLLMRequest, string, error) {
