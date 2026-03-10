@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, PlayCircle, RefreshCw, Server, XCircle } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, PlayCircle, RefreshCw, Server, XIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
     GroupChannelCheckItemStatus,
@@ -88,29 +88,6 @@ function StatusBadge({ status }: { status?: GroupChannelCheckTaskStatus | GroupC
         <Badge variant="outline" className={cn('rounded-full border px-2.5 py-1 text-xs font-medium', className)}>
             {text}
         </Badge>
-    );
-}
-
-function PayloadPanel({
-    title,
-    content,
-    className,
-}: {
-    title: string;
-    content?: string;
-    className?: string;
-}) {
-    return (
-        <section className={cn('flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-muted/30', className)}>
-            <header className="border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">
-                {title}
-            </header>
-            <div className="min-h-0 flex-1 overflow-auto">
-                <pre className="p-4 text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
-                    {content?.trim() ? content : '-'}
-                </pre>
-            </div>
-        </section>
     );
 }
 
@@ -224,13 +201,7 @@ export function GroupChannelCheckDialog({
                 showCloseButton={false}
                 className="h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] lg:h-[calc(100vh-3rem)] lg:w-[min(1400px,96vw)] lg:max-w-[min(1400px,96vw)] rounded-3xl border-border/70 bg-card px-5 py-4 text-card-foreground custom-shadow flex flex-col overflow-hidden"
             >
-                <DialogClose asChild>
-                    <Button variant="ghost" size="icon" className="absolute right-4 top-4 rounded-xl text-muted-foreground hover:text-foreground">
-                        <XCircle className="size-4" />
-                    </Button>
-                </DialogClose>
-
-                <div className="mb-0 pr-12">
+                <div className="mb-0">
                     <div className="mb-1.5 flex items-center gap-3">
                         <div className="flex size-10 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                             <Activity className="size-5" />
@@ -255,11 +226,20 @@ export function GroupChannelCheckDialog({
                                         variant="ghost"
                                         size="icon"
                                         onClick={() => setSummaryExpanded((value) => !value)}
-                                        className="size-8 rounded-xl text-muted-foreground"
+                                        className="size-8 rounded-xl bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                                     >
                                         <ChevronDown className={cn('size-4 transition-transform', !summaryExpanded && '-rotate-90')} />
                                     </Button>
                                 )}
+                                <DialogClose asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-8 rounded-xl text-muted-foreground transition-colors hover:text-foreground"
+                                    >
+                                        <XIcon className="size-6" />
+                                    </Button>
+                                </DialogClose>
                             </div>
                         </div>
                     </div>
@@ -398,7 +378,7 @@ export function GroupChannelCheckDialog({
                                                     variant="ghost"
                                                     size="icon"
                                                     onClick={() => setDetailExpanded((value) => !value)}
-                                                    className="size-7 rounded-lg text-muted-foreground"
+                                                    className="size-7 rounded-lg bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                                                 >
                                                     <ChevronDown className={cn('size-4 transition-transform', !detailExpanded && '-rotate-90')} />
                                                 </Button>
@@ -443,11 +423,12 @@ export function GroupChannelCheckDialog({
 
                                         <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">
                                             <div className="flex min-h-full flex-col">
-                                                <PayloadPanel
-                                                    title={responseText}
-                                                    content={selectedItem.response_content}
-                                                    className="flex-1"
-                                                />
+                                                <div className="mb-2 text-xs font-medium text-foreground">{responseText}</div>
+                                                <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-background/70">
+                                                    <pre className="p-3 text-xs leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+                                                        {selectedItem.response_content?.trim() ? selectedItem.response_content : '-'}
+                                                    </pre>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
