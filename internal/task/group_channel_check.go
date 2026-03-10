@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/bestruirui/octopus/internal/op"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
+	authropicOutbound "github.com/bestruirui/octopus/internal/transformer/outbound/authropic"
+	openaiOutbound "github.com/bestruirui/octopus/internal/transformer/outbound/openai"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/snowflake"
 )
@@ -37,20 +40,22 @@ var (
 )
 
 type groupChannelCheckProbeResult struct {
-	requestKind        string
-	requestURL         string
-	baseURL            string
-	channelKeyID       int
-	channelKeyIndex    int
-	channelKeyPreview  string
-	channelKeyRemark   string
-	responseStatusCode int
-	durationMs         int
-	requestContent     string
-	responsePreview    string
-	responseContent    string
-	attempts           []model.GroupChannelCheckAttempt
-	err                error
+	requestKind          string
+	requestURL           string
+	baseURL              string
+	channelKeyID         int
+	channelKeyIndex      int
+	channelKeyPreview    string
+	channelKeyRemark     string
+	responseStatusCode   int
+	durationMs           int
+	requestContent       string
+	openAIRequestCurl    string
+	anthropicRequestCurl string
+	responsePreview      string
+	responseContent      string
+	attempts             []model.GroupChannelCheckAttempt
+	err                  error
 }
 
 func InitGroupChannelCheckQueue() {
@@ -318,6 +323,8 @@ func processGroupChannelCheckTaskItem(task *model.GroupChannelCheckTask, item *m
 	finishedItem.ResponseStatusCode = result.responseStatusCode
 	finishedItem.DurationMs = result.durationMs
 	finishedItem.RequestContent = result.requestContent
+	finishedItem.OpenAIRequestCurl = result.openAIRequestCurl
+	finishedItem.AnthropicRequestCurl = result.anthropicRequestCurl
 	finishedItem.ResponsePreview = result.responsePreview
 	finishedItem.ResponseContent = result.responseContent
 	finishedItem.FinishedAt = finishedAt
@@ -436,13 +443,15 @@ func buildGroupChannelCheckAttempt(result groupChannelCheckProbeResult) model.Gr
 	}
 
 	return model.GroupChannelCheckAttempt{
-		Status:             status,
-		ChannelKeyID:       result.channelKeyID,
-		ChannelKeyIndex:    result.channelKeyIndex,
-		ChannelKeyPreview:  result.channelKeyPreview,
-		ChannelKeyRemark:   result.channelKeyRemark,
-		ResponseStatusCode: result.responseStatusCode,
-		ResponseContent:    trimProbePayload(responseContent),
+		Status:               status,
+		ChannelKeyID:         result.channelKeyID,
+		ChannelKeyIndex:      result.channelKeyIndex,
+		ChannelKeyPreview:    result.channelKeyPreview,
+		ChannelKeyRemark:     result.channelKeyRemark,
+		ResponseStatusCode:   result.responseStatusCode,
+		OpenAIRequestCurl:    result.openAIRequestCurl,
+		AnthropicRequestCurl: result.anthropicRequestCurl,
+		ResponseContent:      trimProbePayload(responseContent),
 		Error: func() string {
 			if result.err == nil {
 				return ""
@@ -475,6 +484,7 @@ func probeGroupChannelCheckItemWithKey(
 	applyGroupChannelCheckHeaders(outboundRequest, channel)
 
 	result.requestContent = snapshotHTTPRequestBody(outboundRequest)
+	result.openAIRequestCurl, result.anthropicRequestCurl = buildGroupChannelCheckCompatibleCurls(ctx, channel, request, usedKey)
 	if outboundRequest.URL != nil {
 		result.requestURL = outboundRequest.URL.String()
 	}
@@ -619,6 +629,156 @@ func snapshotHTTPRequestBody(req *http.Request) string {
 	}
 	req.Body = io.NopCloser(bytes.NewReader(data))
 	return trimProbePayload(string(data))
+}
+
+func buildGroupChannelCheckCurl(req *http.Request, requestContent string) string {
+	if req == nil || req.URL == nil {
+		return ""
+	}
+
+	parts := []string{"curl"}
+	method := strings.ToUpper(strings.TrimSpace(req.Method))
+	if method == "" {
+		method = http.MethodGet
+	}
+	if method != http.MethodGet {
+		parts = append(parts, "-X", shellQuoteForCurl(method))
+	}
+
+	headerKeys := make([]string, 0, len(req.Header))
+	for headerKey := range req.Header {
+		headerKeys = append(headerKeys, headerKey)
+	}
+	sort.Strings(headerKeys)
+	for _, headerKey := range headerKeys {
+		values := req.Header[headerKey]
+		key := strings.TrimSpace(headerKey)
+		if key == "" {
+			continue
+		}
+		for _, value := range values {
+			parts = append(parts, "-H", shellQuoteForCurl(key+": "+strings.TrimSpace(value)))
+		}
+	}
+
+	if strings.TrimSpace(requestContent) != "" && method != http.MethodGet {
+		parts = append(parts, "--data-raw", shellQuoteForCurl(requestContent))
+	}
+
+	parts = append(parts, shellQuoteForCurl(req.URL.String()))
+	return strings.Join(parts, " ")
+}
+
+func buildGroupChannelCheckCompatibleCurls(
+	ctx context.Context,
+	channel *model.Channel,
+	request *transformerModel.InternalLLMRequest,
+	usedKey model.ChannelKey,
+) (string, string) {
+	if channel == nil || request == nil {
+		return "", ""
+	}
+
+	openAICurl := ""
+	anthropicCurl := ""
+
+	if openAIReq := buildGroupChannelCheckCompatibleRequest(
+		ctx,
+		channel,
+		request,
+		usedKey.ChannelKey,
+		func() transformerModel.Outbound {
+			if request.IsEmbeddingRequest() {
+				return &openaiOutbound.EmbeddingOutbound{}
+			}
+			return &openaiOutbound.ChatOutbound{}
+		},
+	); openAIReq != nil {
+		openAIContent := snapshotHTTPRequestBody(openAIReq)
+		openAICurl = buildGroupChannelCheckCurl(openAIReq, openAIContent)
+	}
+
+	if !request.IsEmbeddingRequest() {
+		if anthropicReq := buildGroupChannelCheckCompatibleRequest(
+			ctx,
+			channel,
+			request,
+			usedKey.ChannelKey,
+			func() transformerModel.Outbound { return &authropicOutbound.MessageOutbound{} },
+		); anthropicReq != nil {
+			anthropicContent := snapshotHTTPRequestBody(anthropicReq)
+			anthropicCurl = buildGroupChannelCheckCurl(anthropicReq, anthropicContent)
+		}
+	}
+
+	return openAICurl, anthropicCurl
+}
+
+func buildGroupChannelCheckCompatibleRequest(
+	ctx context.Context,
+	channel *model.Channel,
+	request *transformerModel.InternalLLMRequest,
+	key string,
+	outboundFactory func() transformerModel.Outbound,
+) *http.Request {
+	if channel == nil || request == nil || outboundFactory == nil {
+		return nil
+	}
+
+	requestCopy, err := cloneGroupChannelCheckInternalRequest(request)
+	if err != nil {
+		return nil
+	}
+	compatibleOutbound := outboundFactory()
+	if compatibleOutbound == nil {
+		return nil
+	}
+
+	outboundRequest, err := compatibleOutbound.TransformRequest(ctx, requestCopy, strings.TrimSpace(channel.GetBaseUrl()), key)
+	if err != nil {
+		return nil
+	}
+	applyGroupChannelCheckHeaders(outboundRequest, channel)
+	return outboundRequest
+}
+
+func cloneGroupChannelCheckInternalRequest(request *transformerModel.InternalLLMRequest) (*transformerModel.InternalLLMRequest, error) {
+	if request == nil {
+		return nil, fmt.Errorf("request is nil")
+	}
+
+	data, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
+	var cloned transformerModel.InternalLLMRequest
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return nil, err
+	}
+	return &cloned, nil
+}
+
+func shellQuoteForCurl(input string) string {
+	if input == "" {
+		return "''"
+	}
+	if needsDoubleQuotedCurlArg(input) {
+		return strconv.Quote(input)
+	}
+	return "'" + strings.ReplaceAll(input, "'", `'\"'\"'`) + "'"
+}
+
+func needsDoubleQuotedCurlArg(input string) bool {
+	for _, r := range input {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return true
+		}
+		if r < 0x20 {
+			return true
+		}
+	}
+	return false
 }
 
 func summarizeGroupChannelCheckResponse(requestKind string, response *transformerModel.InternalLLMResponse) string {

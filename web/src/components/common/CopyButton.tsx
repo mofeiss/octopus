@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, Copy } from 'lucide-react';
 import { useCopyToClipboard } from '@uidotdev/usehooks';
@@ -10,16 +10,20 @@ import { toast } from '@/components/common/Toast';
 
 export type CopyIconButtonProps = {
     text: string;
+    icon?: ReactNode;
     className?: string;
     copyIconClassName?: string;
     checkIconClassName?: string;
+    title?: string;
 };
 
 export function CopyIconButton({
     text,
+    icon,
     className,
     copyIconClassName,
     checkIconClassName,
+    title,
 }: CopyIconButtonProps) {
     const t = useTranslations('common.copy');
     const [, copyToClipboard] = useCopyToClipboard();
@@ -60,7 +64,8 @@ export function CopyIconButton({
         <button
             type="button"
             onClick={handleClick}
-            aria-label="Copy"
+            aria-label={title || 'Copy'}
+            title={title}
             className={cn(className)}
         >
             <AnimatePresence mode="wait" initial={false}>
@@ -70,12 +75,11 @@ export function CopyIconButton({
                     </motion.div>
                 ) : (
                     <motion.div key="copy" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
-                        <Copy className={cn(copyIconClassName)} />
+                        {icon ?? <Copy className={cn(copyIconClassName)} />}
                     </motion.div>
                 )}
             </AnimatePresence>
         </button>
     );
 }
-
 

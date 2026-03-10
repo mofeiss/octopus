@@ -53,42 +53,46 @@ type GroupChannelCheckSyncResult struct {
 }
 
 type GroupChannelCheckTaskItem struct {
-	ID                 int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
-	TaskID             int64                       `json:"task_id" gorm:"index"`
-	GroupID            int                         `json:"group_id" gorm:"index"`
-	GroupItemID        int                         `json:"group_item_id,omitempty" gorm:"default:0"`
-	ChannelID          int                         `json:"channel_id" gorm:"index"`
-	ChannelName        string                      `json:"channel_name"`
-	ChannelType        int                         `json:"channel_type"`
-	ModelName          string                      `json:"model_name"`
-	Status             GroupChannelCheckItemStatus `json:"status" gorm:"index"`
-	RequestKind        string                      `json:"request_kind"`
-	RequestURL         string                      `json:"request_url"`
-	BaseURL            string                      `json:"base_url"`
-	ChannelKeyID       int                         `json:"channel_key_id,omitempty" gorm:"default:0"`
-	ChannelKeyIndex    int                         `json:"channel_key_index,omitempty" gorm:"default:0"`
-	ChannelKeyPreview  string                      `json:"channel_key_preview,omitempty"`
-	ChannelKeyRemark   string                      `json:"channel_key_remark,omitempty"`
-	ResponseStatusCode int                         `json:"response_status_code"`
-	DurationMs         int                         `json:"duration_ms"`
-	RequestContent     string                      `json:"request_content"`
-	ResponsePreview    string                      `json:"response_preview"`
-	ResponseContent    string                      `json:"response_content"`
-	Error              string                      `json:"error"`
-	StartedAt          int64                       `json:"started_at"`
-	FinishedAt         int64                       `json:"finished_at"`
-	Attempts           []GroupChannelCheckAttempt  `json:"attempts,omitempty" gorm:"serializer:json"` // [fork] 多 key 测活尝试明细
+	ID                   int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
+	TaskID               int64                       `json:"task_id" gorm:"index"`
+	GroupID              int                         `json:"group_id" gorm:"index"`
+	GroupItemID          int                         `json:"group_item_id,omitempty" gorm:"default:0"`
+	ChannelID            int                         `json:"channel_id" gorm:"index"`
+	ChannelName          string                      `json:"channel_name"`
+	ChannelType          int                         `json:"channel_type"`
+	ModelName            string                      `json:"model_name"`
+	Status               GroupChannelCheckItemStatus `json:"status" gorm:"index"`
+	RequestKind          string                      `json:"request_kind"`
+	RequestURL           string                      `json:"request_url"`
+	BaseURL              string                      `json:"base_url"`
+	ChannelKeyID         int                         `json:"channel_key_id,omitempty" gorm:"default:0"`
+	ChannelKeyIndex      int                         `json:"channel_key_index,omitempty" gorm:"default:0"`
+	ChannelKeyPreview    string                      `json:"channel_key_preview,omitempty"`
+	ChannelKeyRemark     string                      `json:"channel_key_remark,omitempty"`
+	ResponseStatusCode   int                         `json:"response_status_code"`
+	DurationMs           int                         `json:"duration_ms"`
+	RequestContent       string                      `json:"request_content"`
+	OpenAIRequestCurl    string                      `json:"openai_request_curl"`    // [fork] OpenAI 兼容 curl
+	AnthropicRequestCurl string                      `json:"anthropic_request_curl"` // [fork] Anthropic 兼容 curl
+	ResponsePreview      string                      `json:"response_preview"`
+	ResponseContent      string                      `json:"response_content"`
+	Error                string                      `json:"error"`
+	StartedAt            int64                       `json:"started_at"`
+	FinishedAt           int64                       `json:"finished_at"`
+	Attempts             []GroupChannelCheckAttempt  `json:"attempts,omitempty" gorm:"serializer:json"` // [fork] 多 key 测活尝试明细
 }
 
 type GroupChannelCheckAttempt struct {
-	Status             GroupChannelCheckItemStatus `json:"status"`
-	ChannelKeyID       int                         `json:"channel_key_id,omitempty"`
-	ChannelKeyIndex    int                         `json:"channel_key_index,omitempty"`
-	ChannelKeyPreview  string                      `json:"channel_key_preview,omitempty"`
-	ChannelKeyRemark   string                      `json:"channel_key_remark,omitempty"`
-	ResponseStatusCode int                         `json:"response_status_code"`
-	ResponseContent    string                      `json:"response_content"`
-	Error              string                      `json:"error"`
+	Status               GroupChannelCheckItemStatus `json:"status"`
+	ChannelKeyID         int                         `json:"channel_key_id,omitempty"`
+	ChannelKeyIndex      int                         `json:"channel_key_index,omitempty"`
+	ChannelKeyPreview    string                      `json:"channel_key_preview,omitempty"`
+	ChannelKeyRemark     string                      `json:"channel_key_remark,omitempty"`
+	ResponseStatusCode   int                         `json:"response_status_code"`
+	OpenAIRequestCurl    string                      `json:"openai_request_curl,omitempty"`    // [fork] 当前 key 的 OpenAI 兼容 curl
+	AnthropicRequestCurl string                      `json:"anthropic_request_curl,omitempty"` // [fork] 当前 key 的 Anthropic 兼容 curl
+	ResponseContent      string                      `json:"response_content"`
+	Error                string                      `json:"error"`
 }
 
 type GroupChannelCheckCreateRequest struct {

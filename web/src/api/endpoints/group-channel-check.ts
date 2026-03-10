@@ -42,6 +42,8 @@ export interface GroupChannelCheckTaskItem {
     response_status_code: number;
     duration_ms: number;
     request_content: string;
+    openai_request_curl: string;
+    anthropic_request_curl: string;
     response_preview: string;
     response_content: string;
     error: string;
@@ -57,6 +59,8 @@ export interface GroupChannelCheckAttempt {
     channel_key_preview?: string;
     channel_key_remark?: string;
     response_status_code: number;
+    openai_request_curl?: string;
+    anthropic_request_curl?: string;
     response_content: string;
     error: string;
 }

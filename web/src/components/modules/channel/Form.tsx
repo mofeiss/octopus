@@ -99,6 +99,7 @@ export function ChannelForm({
         : [];
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
+    const inputComposingRef = useRef(false);
 
     const fetchModel = useFetchModel();
 
@@ -160,6 +161,10 @@ export function ChannelForm({
     };
 
     const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const nativeEvent = e.nativeEvent as KeyboardEvent & { isComposing?: boolean; keyCode?: number };
+        const isComposing = nativeEvent.isComposing || nativeEvent.keyCode === 229 || inputComposingRef.current;
+        if (isComposing) return;
+
         if (e.key === 'Enter') {
             e.preventDefault();
             if (inputValue.trim()) handleAddModel(inputValue);
@@ -397,6 +402,12 @@ export function ChannelForm({
                         type="text"
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
+                        onCompositionStart={() => {
+                            inputComposingRef.current = true;
+                        }}
+                        onCompositionEnd={() => {
+                            inputComposingRef.current = false;
+                        }}
                         onKeyDown={handleInputKeyDown}
                         placeholder={t('modelCustomPlaceholder')}
                         className="pr-10 rounded-xl"

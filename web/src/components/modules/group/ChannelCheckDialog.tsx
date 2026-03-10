@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Activity, AlertCircle, CheckCircle2, Clock, KeyRound, Loader2, RefreshCw, XIcon } from 'lucide-react';
+import { Claude, OpenAI } from '@lobehub/icons';
 import { useTranslations } from 'next-intl';
 import {
     type GroupChannelCheckAttempt,
@@ -53,6 +54,8 @@ function buildFallbackAttempt(item: GroupChannelCheckTaskItem): GroupChannelChec
         channel_key_preview: item.channel_key_preview,
         channel_key_remark: item.channel_key_remark,
         response_status_code: item.response_status_code,
+        openai_request_curl: item.openai_request_curl,
+        anthropic_request_curl: item.anthropic_request_curl,
         response_content: item.response_content?.trim() || item.error || item.response_preview || '-',
         error: item.error,
     };
@@ -451,7 +454,7 @@ export function GroupChannelCheckDialog({
                                         </button>
                                     ))}
                                 </div>
-                                <div className="border-t border-border/70 p-3">
+                                <div className="border-t border-border/70 px-4 py-3">
                                     <div className="flex gap-2">
                                         <Button
                                             type="button"
@@ -521,15 +524,9 @@ export function GroupChannelCheckDialog({
                                                     <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                                         {selectedItem.request_content?.trim() ? selectedItem.request_content : '-'}
                                                     </div>
-                                                    <CopyIconButton
-                                                        text={selectedItem.request_content?.trim() ? selectedItem.request_content : ''}
-                                                        className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                                                        copyIconClassName="size-3.5"
-                                                        checkIconClassName="size-3.5 text-primary"
-                                                    />
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
 
                                         <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">
                                             <div className="flex min-h-full flex-col gap-3">
@@ -553,20 +550,32 @@ export function GroupChannelCheckDialog({
                                                                     className="max-w-[12rem]"
                                                                 />
                                                                 <span className="shrink-0 text-muted-foreground/40">/</span>
-                                                                <span className="min-w-0 truncate text-muted-foreground">
+                                                                <span className="min-w-0 flex-1 truncate text-muted-foreground">
                                                                     {attempt.channel_key_preview || '-'}
                                                                 </span>
+                                                                {attempt.openai_request_curl?.trim() && (
+                                                                    <CopyIconButton
+                                                                        text={attempt.openai_request_curl.trim()}
+                                                                        title="复制 OpenAI 兼容 curl"
+                                                                        icon={<OpenAI.Avatar size={14} />}
+                                                                        className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                                                                        checkIconClassName="size-3.5 text-primary"
+                                                                    />
+                                                                )}
+                                                                {attempt.anthropic_request_curl?.trim() && (
+                                                                    <CopyIconButton
+                                                                        text={attempt.anthropic_request_curl.trim()}
+                                                                        title="复制 Anthropic 兼容 curl"
+                                                                        icon={<Claude.Avatar size={14} />}
+                                                                        className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+                                                                        checkIconClassName="size-3.5 text-primary"
+                                                                    />
+                                                                )}
                                                             </div>
                                                             <div className="flex items-start gap-3 px-3 py-3">
                                                                 <pre className={cn('min-w-0 flex-1 whitespace-pre-wrap break-all text-xs leading-relaxed', tone.body)}>
                                                                     {responseContent}
                                                                 </pre>
-                                                                <CopyIconButton
-                                                                    text={responseContent === '-' ? '' : responseContent}
-                                                                    className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-                                                                    copyIconClassName="size-3.5"
-                                                                    checkIconClassName="size-3.5 text-primary"
-                                                                />
                                                             </div>
                                                         </div>
                                                     );

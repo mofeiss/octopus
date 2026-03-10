@@ -109,6 +109,8 @@ func GroupChannelCheckTaskItemSaveResult(item model.GroupChannelCheckTaskItem, c
 			"response_status_code",
 			"duration_ms",
 			"request_content",
+			"openai_request_curl",
+			"anthropic_request_curl",
 			"response_preview",
 			"response_content",
 			"error",
