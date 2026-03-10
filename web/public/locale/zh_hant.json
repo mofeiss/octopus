@@ -382,6 +382,7 @@
         "progress": "{done} / {total} 已完成",
         "actions": {
             "batch": "批量測活",
+            "retry": "再測一次",
             "syncStatus": "按測活結果同步啟用狀態",
             "syncStatusSuccess": "已同步：啟用 {enabled} 個，禁用 {disabled} 個，跳過 {skipped} 個",
             "syncStatusFailed": "同步啟用狀態失敗"

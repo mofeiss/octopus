@@ -382,6 +382,7 @@
         "progress": "{done} / {total} completed",
         "actions": {
             "batch": "Batch",
+            "retry": "Check again",
             "syncStatus": "Sync enabled state from this check",
             "syncStatusSuccess": "Synced: enabled {enabled}, disabled {disabled}, skipped {skipped}",
             "syncStatusFailed": "Failed to sync enabled state"

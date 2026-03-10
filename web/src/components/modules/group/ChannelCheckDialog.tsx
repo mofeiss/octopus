@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, PlayCircle, RefreshCw, Server, XIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, RefreshCw, Server, XIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
     GroupChannelCheckItemStatus,
@@ -96,11 +96,15 @@ export function GroupChannelCheckDialog({
     onOpenChange,
     taskId,
     creating,
+    onRetry,
+    retrying,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     taskId?: number | null;
     creating?: boolean;
+    onRetry?: () => void;
+    retrying?: boolean;
 }) {
     const t = useTranslations('group.healthCheck');
     const taskQuery = useGroupChannelCheckTaskDetail(taskId ?? undefined, open && !!taskId);
@@ -108,8 +112,25 @@ export function GroupChannelCheckDialog({
     const task = taskQuery.data;
     const items = useMemo(() => task?.items ?? [], [task?.items]);
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-    const [summaryExpanded, setSummaryExpanded] = useState(false);
-    const [detailExpanded, setDetailExpanded] = useState(false);
+    const [summaryExpandedOverride, setSummaryExpandedOverride] = useState<boolean | null>(null);
+    const [detailExpandedOverride, setDetailExpandedOverride] = useState<boolean | null>(null);
+    const [isDesktop, setIsDesktop] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const mediaQuery = window.matchMedia('(min-width: 1024px)');
+        const updateDesktopState = () => {
+            setIsDesktop(mediaQuery.matches);
+        };
+
+        updateDesktopState();
+        mediaQuery.addEventListener('change', updateDesktopState);
+
+        return () => {
+            mediaQuery.removeEventListener('change', updateDesktopState);
+        };
+    }, []);
 
     const effectiveSelectedItemId = useMemo(() => {
         if (items.length === 0) return null;
@@ -119,6 +140,8 @@ export function GroupChannelCheckDialog({
     const selectedItem = useMemo(() => {
         return items.find((item) => item.id === effectiveSelectedItemId) ?? items[0];
     }, [effectiveSelectedItemId, items]);
+    const summaryExpanded = summaryExpandedOverride ?? true;
+    const detailExpanded = detailExpandedOverride ?? isDesktop;
 
     const progressText = task
         ? withTranslationFallback(
@@ -146,15 +169,15 @@ export function GroupChannelCheckDialog({
         `耗时 ${value}`,
         ['group.healthCheck.detail.duration', 'detail.duration']
     );
-    const formatStatusCodeText = (value: string | number) => withTranslationFallback(
-        t('detail.statusCode', { value }),
-        `状态码 ${value}`,
-        ['group.healthCheck.detail.statusCode', 'detail.statusCode']
-    );
     const syncStatusText = withTranslationFallback(
         t('actions.syncStatus'),
         '按测活结果同步启用状态',
         ['group.healthCheck.actions.syncStatus', 'actions.syncStatus']
+    );
+    const retryText = withTranslationFallback(
+        t('actions.retry'),
+        '再测一次',
+        ['group.healthCheck.actions.retry', 'actions.retry']
     );
 
     const handleSyncStatus = async () => {
@@ -187,8 +210,8 @@ export function GroupChannelCheckDialog({
 
     const handleDialogOpenChange = (nextOpen: boolean) => {
         if (!nextOpen) {
-            setSummaryExpanded(false);
-            setDetailExpanded(false);
+            setSummaryExpandedOverride(null);
+            setDetailExpandedOverride(null);
             setSelectedItemId(null);
         }
 
@@ -225,7 +248,7 @@ export function GroupChannelCheckDialog({
                                         type="button"
                                         variant="ghost"
                                         size="icon"
-                                        onClick={() => setSummaryExpanded((value) => !value)}
+                                        onClick={() => setSummaryExpandedOverride(!summaryExpanded)}
                                         className="size-8 rounded-xl bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                                     >
                                         <ChevronDown className={cn('size-4 transition-transform', !summaryExpanded && '-rotate-90')} />
@@ -245,22 +268,22 @@ export function GroupChannelCheckDialog({
                     </div>
 
                     {task && summaryExpanded && (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 pl-[3.25rem] pr-1 text-xs text-muted-foreground md:grid-cols-4">
-                            <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-0 pr-1 text-[11px] text-muted-foreground sm:pl-[3.25rem] sm:text-xs">
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
                                 <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
                                 <span>{metricsSuccessText} {task.success_count}</span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
                                 <AlertCircle className="size-3.5 shrink-0 text-destructive" />
                                 <span>{metricsFailedText} {task.failed_count}</span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
                                 <Loader2 className="size-3.5 shrink-0 text-primary" />
                                 <span>{metricsRunningText} {task.running_count}</span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
                                 <Clock className="size-3.5 shrink-0 text-muted-foreground" />
-                                <span className="truncate">{metricsCreatedAtText} {formatTaskTime(task.created_at)}</span>
+                                <span>{metricsCreatedAtText} {formatTaskTime(task.created_at)}</span>
                             </div>
                         </div>
                     )}
@@ -301,7 +324,7 @@ export function GroupChannelCheckDialog({
                                             type="button"
                                             onClick={() => {
                                                 setSelectedItemId(item.id);
-                                                setDetailExpanded(false);
+                                                setDetailExpandedOverride(isDesktop);
                                             }}
                                             className={cn(
                                                 'w-full min-w-0 overflow-hidden rounded-2xl border px-3 py-2.5 text-left transition-colors',
@@ -341,15 +364,27 @@ export function GroupChannelCheckDialog({
                                     ))}
                                 </div>
                                 <div className="border-t border-border/70 p-3">
-                                    <Button
-                                        type="button"
-                                        onClick={handleSyncStatus}
-                                        disabled={!taskId || syncTaskStatus.isPending}
-                                        className="w-full rounded-xl"
-                                    >
-                                        {syncTaskStatus.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                                        {syncStatusText}
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            type="button"
+                                            onClick={handleSyncStatus}
+                                            disabled={!taskId || syncTaskStatus.isPending}
+                                            className="min-w-0 flex-1 rounded-xl"
+                                        >
+                                            {syncTaskStatus.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                                            {syncStatusText}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            onClick={onRetry}
+                                            disabled={!onRetry || retrying}
+                                            className="shrink-0 rounded-xl"
+                                        >
+                                            {retrying ? <Loader2 className="size-4 animate-spin" /> : <Activity className="size-4" />}
+                                            {retryText}
+                                        </Button>
+                                    </div>
                                 </div>
                             </aside>
 
@@ -368,16 +403,21 @@ export function GroupChannelCheckDialog({
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <h3 className="truncate text-base font-semibold text-foreground">{selectedItem.channel_name}</h3>
                                                         <StatusBadge status={selectedItem.status} />
-                                                        <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs">
-                                                            {selectedItem.model_name}
-                                                        </Badge>
+                                                        {selectedItem.model_name && (
+                                                            <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-xs">
+                                                                {selectedItem.model_name}
+                                                            </Badge>
+                                                        )}
+                                                        <span className="rounded-full border border-border/70 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                                            {selectedItem.response_status_code || '-'}
+                                                        </span>
                                                     </div>
                                                 </div>
                                                 <Button
                                                     type="button"
                                                     variant="ghost"
                                                     size="icon"
-                                                    onClick={() => setDetailExpanded((value) => !value)}
+                                                    onClick={() => setDetailExpandedOverride(!detailExpanded)}
                                                     className="size-7 rounded-lg bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                                                 >
                                                     <ChevronDown className={cn('size-4 transition-transform', !detailExpanded && '-rotate-90')} />
@@ -386,28 +426,24 @@ export function GroupChannelCheckDialog({
 
                                             {detailExpanded && (
                                                 <div className="mt-3 space-y-3">
-                                                    <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:gap-3 md:grid-cols-2 2xl:grid-cols-4">
-                                                        <div className="flex items-center gap-2">
+                                                    <div className="space-y-2 text-xs text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1.4fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-3 lg:space-y-0">
+                                                        <div className="flex min-w-0 items-center gap-2">
                                                             <Server className="size-3.5 shrink-0" />
                                                             <span className="truncate">{selectedItem.request_url || selectedItem.base_url || '-'}</span>
                                                         </div>
-                                                        {selectedItem.duration_ms > 0 && (
-                                                            <div className="flex items-center gap-2">
+                                                        <div className="grid grid-cols-2 gap-2 lg:contents">
+                                                            <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
                                                                 <Clock className="size-3.5 shrink-0" />
-                                                                <span>{formatDurationText(formatDuration(selectedItem.duration_ms))}</span>
+                                                                <span>{formatDurationText(selectedItem.duration_ms > 0 ? formatDuration(selectedItem.duration_ms) : '-')}</span>
                                                             </div>
-                                                        )}
-                                                        <div className="flex items-center gap-2">
-                                                            <PlayCircle className="size-3.5 shrink-0" />
-                                                            <span>{formatStatusCodeText(selectedItem.response_status_code || '-')}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <KeyRound className="size-3.5 shrink-0" />
-                                                            <span className="truncate">
-                                                                {selectedItem.channel_key_preview
-                                                                    ? `${selectedItem.channel_key_index || '-'} · ${selectedItem.channel_key_preview}${selectedItem.channel_key_remark ? ` · ${selectedItem.channel_key_remark}` : ''}`
-                                                                    : '-'}
-                                                            </span>
+                                                            <div className="flex min-w-0 items-center gap-2">
+                                                                <KeyRound className="size-3.5 shrink-0" />
+                                                                <span className="truncate">
+                                                                    {selectedItem.channel_key_preview
+                                                                        ? `${selectedItem.channel_key_index || '-'} · ${selectedItem.channel_key_preview}${selectedItem.channel_key_remark ? ` · ${selectedItem.channel_key_remark}` : ''}`
+                                                                        : '-'}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
 

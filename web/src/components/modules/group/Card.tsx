@@ -347,6 +347,33 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
         );
     }, [createChannelCheckTask, group.id, latestChannelCheckTask, openChannelCheckTask, t]);
 
+    const handleRetryBatchChannelCheck = useCallback(() => {
+        if (!group.id) return;
+        createChannelCheckTask.mutate(
+            { group_id: group.id },
+            {
+                onSuccess: (task) => {
+                    setSelectedChannelCheckTaskId(task.id);
+                    toast.success(withTranslationFallback(
+                        t('healthCheck.toast.created'),
+                        '已加入测活队列',
+                        ['group.healthCheck.toast.created', 'healthCheck.toast.created']
+                    ));
+                },
+                onError: (error) => {
+                    toast.error(
+                        withTranslationFallback(
+                            t('healthCheck.toast.createFailed'),
+                            '创建测活任务失败',
+                            ['group.healthCheck.toast.createFailed', 'healthCheck.toast.createFailed']
+                        ),
+                        { description: error.message }
+                    );
+                },
+            }
+        );
+    }, [createChannelCheckTask, group.id, t]);
+
     const handleCreateSingleChannelCheck = useCallback((member: SelectedMember) => {
         if (!group.id) return;
         createChannelCheckTask.mutate(
@@ -755,6 +782,8 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                 onOpenChange={setChannelCheckOpen}
                 taskId={selectedChannelCheckTaskId}
                 creating={createChannelCheckTask.isPending && !selectedChannelCheckTaskId}
+                onRetry={handleRetryBatchChannelCheck}
+                retrying={createChannelCheckTask.isPending}
             />
         </>
     );
