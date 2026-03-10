@@ -9,7 +9,6 @@ import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
-import { CopyIconButton } from '@/components/common/CopyButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
@@ -100,9 +99,6 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const [editRemarkOpen, setEditRemarkOpen] = useState(false);
-    const [deleteRemarkOpen, setDeleteRemarkOpen] = useState(false);
-    const [remarkDraft, setRemarkDraft] = useState('');
     const [members, setMembers] = useState<SelectedMember[]>([]);
     const [channelCheckOpen, setChannelCheckOpen] = useState(false);
     const [selectedChannelCheckTaskId, setSelectedChannelCheckTaskId] = useState<number | null>(null);
@@ -170,39 +166,6 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
 
     const onSuccess = useCallback(() => toast.success(t('toast.updated')), [t]);
     const onError = useCallback((error: Error) => toast.error(t('toast.updateFailed'), { description: error.message }), [t]);
-
-    const handleEditRemarkOpen = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-        setRemarkDraft(group.remark ?? '');
-        setEditRemarkOpen(true);
-    }, [group.remark]);
-
-    const handleEditRemarkSave = useCallback(() => {
-        if (!group.id) return;
-        updateGroup.mutate(
-            { id: group.id, remark: remarkDraft },
-            {
-                onSuccess: () => setEditRemarkOpen(false),
-                onError,
-            }
-        );
-    }, [group.id, onError, remarkDraft, updateGroup]);
-
-    const handleDeleteRemarkOpen = useCallback((e: React.MouseEvent) => {
-        e.stopPropagation();
-        setDeleteRemarkOpen(true);
-    }, []);
-
-    const handleDeleteRemarkConfirm = useCallback(() => {
-        if (!group.id) return;
-        updateGroup.mutate(
-            { id: group.id, remark: '' },
-            {
-                onSuccess: () => setDeleteRemarkOpen(false),
-                onError,
-            }
-        );
-    }, [group.id, onError, updateGroup]);
 
     // Avoid UI flicker: drag-reorder also uses the same mutation, so only "mode switch" should lock mode buttons.
     const isUpdatingMode = (() => {
@@ -543,13 +506,28 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
         <>
             <article className="flex flex-col h-full rounded-3xl border border-border bg-card text-card-foreground p-4 custom-shadow">
                 <header className="flex items-start justify-between mb-3 relative overflow-visible rounded-xl -mx-1 px-1 -my-1 py-1">
-                    <div className="relative flex-1 mr-2 min-w-0 group/title">
+                    <div className="relative mr-2 flex min-w-0 flex-1 items-center gap-2 group/title">
                         <Tooltip side="top" sideOffset={10} align="center">
                             <TooltipTrigger asChild>
-                                <h3 className="text-lg font-bold truncate">{group.name}</h3>
+                                <h3 className={cn('truncate text-lg font-bold', group.remark ? 'max-w-[45%] sm:max-w-[50%]' : 'max-w-full')}>
+                                    {group.name}
+                                </h3>
                             </TooltipTrigger>
                             <TooltipContent key={group.name}>{group.name}</TooltipContent>
                         </Tooltip>
+                        {group.remark && (
+                            <>
+                                <span className="shrink-0 text-muted-foreground/40">/</span>
+                                <Tooltip side="top" sideOffset={10} align="start">
+                                    <TooltipTrigger asChild>
+                                        <span className="min-w-0 flex-1 truncate text-sm text-primary">
+                                            {group.remark}
+                                        </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent key={`remark-${group.id ?? group.name}`}>{group.remark}</TooltipContent>
+                                </Tooltip>
+                            </>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
@@ -575,17 +553,6 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                             </MorphingDialogContainer>
                         </MorphingDialog>
 
-                        <Tooltip side="top" sideOffset={10} align="center">
-                            <TooltipTrigger>
-                                <CopyIconButton
-                                    text={group.name}
-                                    className="p-1.5 rounded-lg transition-colors hover:bg-muted text-muted-foreground hover:text-foreground"
-                                    copyIconClassName="size-4"
-                                    checkIconClassName="size-4 text-primary"
-                                />
-                            </TooltipTrigger>
-                            <TooltipContent>{t('detail.actions.copyName')}</TooltipContent>
-                        </Tooltip>
                         {!confirmDelete && (
                             <Tooltip side="top" sideOffset={10} align="center">
                                 <TooltipTrigger>
@@ -612,28 +579,6 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                         )}
                     </AnimatePresence>
                 </header>
-
-                {group.remark && (
-                    <div className="relative flex items-center justify-between gap-2 -mt-1 mb-3">
-                        <span className="text-sm text-primary truncate min-w-0">{group.remark}</span>
-                        <div className="flex items-center gap-1 shrink-0">
-                            <button
-                                type="button"
-                                onClick={handleEditRemarkOpen}
-                                className="p-1 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                            >
-                                <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleDeleteRemarkOpen}
-                                className="p-1 rounded-md text-muted-foreground/50 hover:text-destructive transition-colors"
-                            >
-                                <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                        </div>
-                    </div>
-                )}
 
                 <div className="mb-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     <Button
@@ -735,61 +680,6 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                     />
                 </section>
             </article>
-
-            <Dialog open={editRemarkOpen} onOpenChange={setEditRemarkOpen}>
-                <DialogContent className="sm:max-w-md rounded-2xl">
-                    <DialogHeader>
-                        <DialogTitle>{t('card.editRemark')}</DialogTitle>
-                    </DialogHeader>
-                    <Input
-                        value={remarkDraft}
-                        onChange={(e) => setRemarkDraft(e.target.value)}
-                        placeholder={t('card.editRemarkPlaceholder')}
-                        className="rounded-xl"
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleEditRemarkSave();
-                            }
-                        }}
-                    />
-                    <DialogFooter>
-                        <Button
-                            onClick={handleEditRemarkSave}
-                            disabled={updateGroup.isPending}
-                            className="rounded-xl"
-                        >
-                            {t('card.editRemarkSave')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={deleteRemarkOpen} onOpenChange={setDeleteRemarkOpen}>
-                <DialogContent className="sm:max-w-md rounded-2xl">
-                    <DialogHeader>
-                        <DialogTitle>{t('card.deleteRemark')}</DialogTitle>
-                    </DialogHeader>
-                    <p className="text-sm text-muted-foreground">{t('card.deleteRemarkConfirm')}</p>
-                    <DialogFooter>
-                        <Button
-                            variant="secondary"
-                            onClick={() => setDeleteRemarkOpen(false)}
-                            className="rounded-xl"
-                        >
-                            {t('card.cancel')}
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            onClick={handleDeleteRemarkConfirm}
-                            disabled={updateGroup.isPending}
-                            className="rounded-xl"
-                        >
-                            {t('card.confirm')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             <Dialog open={autoHealthCheckOpen} onOpenChange={setAutoHealthCheckOpen}>
                 <DialogContent className="sm:max-w-md rounded-2xl">
