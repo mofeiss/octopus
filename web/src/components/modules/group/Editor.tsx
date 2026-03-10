@@ -59,7 +59,7 @@ function ModelPickerSection({
     }, [modelChannels]);
 
     return (
-        <div className="rounded-xl border border-border/50 bg-muted/30 flex flex-col min-h-0">
+        <div className="rounded-xl border border-border/50 bg-muted/30 flex h-[22rem] min-h-[22rem] flex-col md:h-full md:min-h-0">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-muted/50">
                 <span className="text-sm font-medium text-foreground">
                     {t('form.addItem')}
@@ -168,7 +168,7 @@ function SortSection({
     const t = useTranslations('group');
 
     return (
-        <div className="rounded-xl border border-border/50 bg-muted/30 flex flex-col min-h-0">
+        <div className="rounded-xl border border-border/50 bg-muted/30 flex h-[22rem] min-h-[22rem] flex-col md:h-full md:min-h-0">
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/30 bg-muted/50">
                 <span className="text-sm font-medium text-foreground">
                     {t('form.items')}
@@ -338,10 +338,11 @@ export function GroupEditor({
 
 
     return (
-        <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 ">
-            <div className="flex-1 min-h-0 overflow-hidden pr-1">
-                <FieldGroup className="gap-4 flex flex-col min-h-0 h-full">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+                <FieldGroup className="flex min-h-full flex-col gap-4 pb-3">
+                    {/* [fork] compact mobile controls to preserve vertical space for model operations */}
+                    <div className="grid grid-cols-3 gap-3 lg:gap-4">
                         <Field>
                             <FieldLabel htmlFor="group-name">{t('form.name')}</FieldLabel>
                             <Input
@@ -349,6 +350,28 @@ export function GroupEditor({
                                 value={groupName}
                                 onChange={(e) => setGroupName(e.target.value)}
                                 className="rounded-xl"
+                            />
+                        </Field>
+                        <Field>
+                            <FieldLabel htmlFor="group-route-aliases">
+                                {t('form.routeAliases')}
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {t('form.routeAliasesHint')}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </FieldLabel>
+                            <Input
+                                id="group-route-aliases"
+                                value={routeAliases}
+                                onChange={(e) => setRouteAliases(e.target.value)}
+                                className="rounded-xl"
+                                placeholder={t('form.routeAliasesPlaceholder')}
                             />
                         </Field>
                         <Field>
@@ -366,7 +389,15 @@ export function GroupEditor({
                                 </p>
                             )}
                         </Field>
-
+                        <Field>
+                            <FieldLabel htmlFor="group-remark">{t('form.groupRemark')}</FieldLabel>
+                            <Input
+                                id="group-remark"
+                                value={remark}
+                                onChange={(e) => setRemark(e.target.value)}
+                                className="rounded-xl"
+                            />
+                        </Field>
                         <Field>
                             <FieldLabel htmlFor="group-first-token-time-out">
                                 {t('form.firstTokenTimeOut')}
@@ -400,7 +431,6 @@ export function GroupEditor({
                                 className="rounded-xl"
                             />
                         </Field>
-
                         <Field>
                             <FieldLabel htmlFor="group-session-keep-time">
                                 {t('form.sessionKeepTime')}
@@ -436,41 +466,6 @@ export function GroupEditor({
                         </Field>
                     </div>
 
-                    {/* [fork] Route Aliases */}
-                    <Field>
-                        <FieldLabel htmlFor="group-route-aliases">
-                            {t('form.routeAliases')}
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        {t('form.routeAliasesHint')}
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        </FieldLabel>
-                        <Input
-                            id="group-route-aliases"
-                            value={routeAliases}
-                            onChange={(e) => setRouteAliases(e.target.value)}
-                            className="rounded-xl"
-                            placeholder={t('form.routeAliasesPlaceholder')}
-                        />
-                    </Field>
-
-                    {/* [fork] Group Remark */}
-                    <Field>
-                        <FieldLabel htmlFor="group-remark">{t('form.groupRemark')}</FieldLabel>
-                        <Input
-                            id="group-remark"
-                            value={remark}
-                            onChange={(e) => setRemark(e.target.value)}
-                            className="rounded-xl"
-                        />
-                    </Field>
-
                     {/* Mode */}
                     <div className="flex gap-1">
                         {([1, 2, 3, 4] as const).map((m) => (
@@ -488,8 +483,8 @@ export function GroupEditor({
                         ))}
                     </div>
 
-                    <div className="flex-1 min-h-0">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
+                    <div className="flex flex-col gap-4 min-h-0 md:flex-1">
+                        <div className="grid min-h-0 grid-cols-1 gap-4 md:h-full md:grid-cols-2">
                             <ModelPickerSection
                                 modelChannels={modelChannels}
                                 selectedMembers={selectedMembers}
