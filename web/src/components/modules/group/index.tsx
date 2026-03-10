@@ -8,6 +8,7 @@ import { useGroupChannelCheckLatestTasks } from '@/api/endpoints/group-channel-c
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
 import { useGridPageSize } from '@/hooks/use-grid-page-size';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 /** Group card approximate height (variable due to content) */
 const GROUP_CARD_HEIGHT = 330;
@@ -15,6 +16,7 @@ const GROUP_CARD_HEIGHT = 330;
 export function Group() {
     const { data: groups } = useGroupList();
     const { data: latestChannelCheckTasks = [] } = useGroupChannelCheckLatestTasks();
+    const isMobile = useIsMobile();
     const pageKey = 'group' as const;
     const pageSize = useGridPageSize({
         itemHeight: GROUP_CARD_HEIGHT,
@@ -36,11 +38,38 @@ export function Group() {
         return sorted.filter((g) => g.name.toLowerCase().includes(term));
     }, [groups, searchTerm]);
 
+    const pagedGroupBuckets = useMemo(() => {
+        const buckets: typeof filteredGroups[] = [];
+        const effectivePageSize = Math.max(1, pageSize);
+
+        for (let index = 0; index < filteredGroups.length;) {
+            let bucketSize = effectivePageSize;
+            if (isMobile) {
+                const firstGroup = filteredGroups[index];
+                const configuredItemCount = firstGroup?.items?.length ?? 0;
+                if (configuredItemCount > 5) {
+                    bucketSize = 1; // [fork] 移动端首张分组卡配置项过多时独占一页
+                }
+            }
+
+            buckets.push(filteredGroups.slice(index, index + bucketSize));
+            index += bucketSize;
+        }
+
+        return buckets;
+    }, [filteredGroups, isMobile, pageSize]);
+
     // Sync to store for Toolbar to display pagination info
     useEffect(() => {
+        if (isMobile) {
+            setTotalItems(pageKey, pagedGroupBuckets.length);
+            setPageSize(pageKey, 1);
+            return;
+        }
+
         setTotalItems(pageKey, filteredGroups.length);
         setPageSize(pageKey, pageSize);
-    }, [filteredGroups.length, pageSize, pageKey, setTotalItems, setPageSize]);
+    }, [filteredGroups.length, isMobile, pageSize, pageKey, pagedGroupBuckets.length, setTotalItems, setPageSize]);
 
     // Reset to page 1 when search term changes
     useEffect(() => {
@@ -48,9 +77,8 @@ export function Group() {
     }, [searchTerm, pageKey, setPage]);
 
     const pagedGroups = useMemo(() => {
-        const start = (page - 1) * pageSize;
-        return filteredGroups.slice(start, start + pageSize);
-    }, [filteredGroups, page, pageSize]);
+        return pagedGroupBuckets[page - 1] ?? [];
+    }, [page, pagedGroupBuckets]);
 
     const latestTaskByGroupId = useMemo(() => {
         const map = new Map<number, typeof latestChannelCheckTasks[number]>();

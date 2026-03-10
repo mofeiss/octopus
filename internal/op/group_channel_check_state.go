@@ -92,6 +92,17 @@ func GroupChannelCheckTaskNextPendingItem(taskID int64, ctx context.Context) (*m
 	return &item, nil
 }
 
+func GroupChannelCheckTaskListPendingItems(taskID int64, ctx context.Context) ([]model.GroupChannelCheckTaskItem, error) {
+	items := make([]model.GroupChannelCheckTaskItem, 0)
+	if err := db.GetDB().WithContext(ctx).
+		Where("task_id = ? AND status = ?", taskID, model.GroupChannelCheckItemStatusPending).
+		Order("id ASC").
+		Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func GroupChannelCheckTaskAppendItems(
 	taskID int64,
 	group model.Group,

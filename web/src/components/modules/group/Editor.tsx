@@ -485,22 +485,26 @@ export function GroupEditor({
 
                     <div className="flex flex-col gap-4 min-h-0 md:flex-1">
                         <div className="grid min-h-0 grid-cols-1 gap-4 md:h-full md:grid-cols-2">
-                            <ModelPickerSection
-                                modelChannels={modelChannels}
-                                selectedMembers={selectedMembers}
-                                onAdd={handleAddMember}
-                                onAutoAdd={handleAutoAdd}
-                                autoAddDisabled={autoAddDisabled}
-                            />
-                            <SortSection
-                                members={selectedMembers}
-                                onReorder={setSelectedMembers}
-                                onRemove={handleRemoveMember}
-                                onWeightChange={handleWeightChange}
-                                removingIds={removingIds}
-                                showWeight={mode === 4}
-                                onClear={handleClearMembers}
-                            />
+                            <div className="order-2 md:order-1 min-h-0">
+                                <ModelPickerSection
+                                    modelChannels={modelChannels}
+                                    selectedMembers={selectedMembers}
+                                    onAdd={handleAddMember}
+                                    onAutoAdd={handleAutoAdd}
+                                    autoAddDisabled={autoAddDisabled}
+                                />
+                            </div>
+                            <div className="order-1 md:order-2 min-h-0">
+                                <SortSection
+                                    members={selectedMembers}
+                                    onReorder={setSelectedMembers}
+                                    onRemove={handleRemoveMember}
+                                    onWeightChange={handleWeightChange}
+                                    removingIds={removingIds}
+                                    showWeight={mode === 4}
+                                    onClear={handleClearMembers}
+                                />
+                            </div>
                         </div>
                     </div>
                 </FieldGroup>

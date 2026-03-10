@@ -25,6 +25,7 @@ import (
 const (
 	groupChannelCheckQueueSize      = 128
 	groupChannelCheckWorkerCount    = 2
+	groupChannelCheckBatchParallel  = 5 // [fork] 批量测活按渠道并发，单渠道串行
 	groupChannelCheckRequestTimeout = 45 * time.Second
 	groupChannelCheckPreviewLimit   = 16 * 1024
 )
@@ -127,100 +128,7 @@ func executeGroupChannelCheckTask(taskID int64) {
 		log.Warnf("failed to refresh group channel check summary (task=%d): %v", taskID, err)
 	}
 
-	lastErr := ""
-	idleRetry := 0
-	for {
-		item, nextErr := op.GroupChannelCheckTaskNextPendingItem(taskID, ctx)
-		if nextErr != nil {
-			log.Warnf("failed to load next group channel check item (task=%d): %v", taskID, nextErr)
-			lastErr = nextErr.Error()
-			break
-		}
-		if item == nil {
-			taskAfter, refreshErr := op.GroupChannelCheckTaskRefreshSummary(taskID, ctx)
-			if refreshErr != nil {
-				log.Warnf("failed to finalize group channel check summary (task=%d): %v", taskID, refreshErr)
-				lastErr = refreshErr.Error()
-				break
-			}
-			if taskAfter.Status == model.GroupChannelCheckTaskStatusPending || taskAfter.Status == model.GroupChannelCheckTaskStatusRunning {
-				if idleRetry >= 5 {
-					lastErr = "task finished unexpectedly"
-					break
-				}
-				idleRetry++
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-			if err := op.GroupChannelCheckTaskUpdate(taskID, map[string]any{
-				"last_error":  lastErr,
-				"finished_at": taskAfter.FinishedAt,
-				"status":      taskAfter.Status,
-			}, ctx); err != nil {
-				log.Warnf("failed to finalize group channel check task (task=%d): %v", taskID, err)
-			}
-			return
-		}
-
-		idleRetry = 0
-		itemStart := time.Now().Unix()
-		if err := op.GroupChannelCheckTaskItemUpdate(item.ID, map[string]any{
-			"status":               model.GroupChannelCheckItemStatusRunning,
-			"started_at":           itemStart,
-			"finished_at":          int64(0),
-			"error":                "",
-			"response_status_code": 0,
-		}, ctx); err != nil {
-			log.Warnf("failed to mark group channel check item running (item=%d): %v", item.ID, err)
-			lastErr = err.Error()
-			continue
-		}
-		if _, err := op.GroupChannelCheckTaskRefreshSummary(taskID, ctx); err != nil {
-			log.Warnf("failed to refresh running group channel check summary (task=%d): %v", taskID, err)
-		}
-
-		result := probeGroupChannelCheckItem(item.ChannelID, item.ModelName)
-		finishedAt := time.Now().Unix()
-		finishedItem := *item
-		finishedItem.RequestKind = result.requestKind
-		finishedItem.RequestURL = result.requestURL
-		finishedItem.BaseURL = result.baseURL
-		finishedItem.ChannelKeyID = result.channelKeyID
-		finishedItem.ChannelKeyIndex = result.channelKeyIndex
-		finishedItem.ChannelKeyPreview = result.channelKeyPreview
-		finishedItem.ChannelKeyRemark = result.channelKeyRemark
-		finishedItem.ResponseStatusCode = result.responseStatusCode
-		finishedItem.DurationMs = result.durationMs
-		finishedItem.RequestContent = result.requestContent
-		finishedItem.ResponsePreview = result.responsePreview
-		finishedItem.ResponseContent = result.responseContent
-		finishedItem.FinishedAt = finishedAt
-		finishedItem.Attempts = result.attempts
-		if result.err != nil {
-			finishedItem.Status = model.GroupChannelCheckItemStatusFailed
-			finishedItem.Error = result.err.Error()
-			lastErr = result.err.Error()
-		} else {
-			finishedItem.Status = model.GroupChannelCheckItemStatusSuccess
-			finishedItem.Error = ""
-		}
-
-		if err := op.GroupChannelCheckTaskItemSaveResult(finishedItem, ctx); err != nil {
-			log.Warnf("failed to update group channel check item result (item=%d): %v", item.ID, err)
-			lastErr = err.Error()
-			continue
-		}
-
-		group, groupErr := op.GroupGet(task.GroupID, ctx)
-		if groupErr == nil {
-			if err := op.GroupChannelCheckStateUpsertByItem(*group, finishedItem, ctx); err != nil {
-				log.Warnf("failed to sync group channel check state (item=%d): %v", item.ID, err)
-			}
-		}
-		if _, err := op.GroupChannelCheckTaskRefreshSummary(taskID, ctx); err != nil {
-			log.Warnf("failed to refresh finished group channel check summary (task=%d): %v", taskID, err)
-		}
-	}
+	lastErr := executeGroupChannelCheckTaskItems(task, ctx)
 
 	taskAfter, err := op.GroupChannelCheckTaskRefreshSummary(taskID, ctx)
 	if err != nil {
@@ -243,6 +151,201 @@ func executeGroupChannelCheckTask(taskID int64) {
 	if err := op.GroupChannelCheckTaskUpdate(taskID, finalUpdates, ctx); err != nil {
 		log.Warnf("failed to finalize group channel check task (task=%d): %v", taskID, err)
 	}
+}
+
+func executeGroupChannelCheckTaskItems(task *model.GroupChannelCheckTask, ctx context.Context) string {
+	channelParallel := 1
+	if task != nil && task.Mode == model.GroupChannelCheckTaskModeBatch {
+		channelParallel = groupChannelCheckBatchParallel
+	}
+
+	activeChannels := make(map[int]struct{}, channelParallel)
+	var activeMu sync.Mutex
+	var waitGroup sync.WaitGroup
+
+	lastErr := ""
+	setLastErr := func(err error) {
+		if err == nil {
+			return
+		}
+		activeMu.Lock()
+		lastErr = err.Error()
+		activeMu.Unlock()
+	}
+	setLastErrText := func(text string) {
+		if strings.TrimSpace(text) == "" {
+			return
+		}
+		activeMu.Lock()
+		lastErr = text
+		activeMu.Unlock()
+	}
+	getLastErr := func() string {
+		activeMu.Lock()
+		defer activeMu.Unlock()
+		return lastErr
+	}
+
+	idleRetry := 0
+	stopScheduling := false
+	for {
+		launched := false
+		for {
+			activeMu.Lock()
+			if len(activeChannels) >= channelParallel || stopScheduling {
+				activeMu.Unlock()
+				break
+			}
+			busyChannels := make(map[int]struct{}, len(activeChannels))
+			for channelID := range activeChannels {
+				busyChannels[channelID] = struct{}{}
+			}
+			activeMu.Unlock()
+
+			item, nextErr := nextGroupChannelCheckPendingItem(task.ID, busyChannels, ctx)
+			if nextErr != nil {
+				log.Warnf("failed to load next group channel check item (task=%d): %v", task.ID, nextErr)
+				setLastErr(nextErr)
+				stopScheduling = true
+				break
+			}
+			if item == nil {
+				break
+			}
+
+			activeMu.Lock()
+			if _, exists := activeChannels[item.ChannelID]; exists {
+				activeMu.Unlock()
+				continue
+			}
+			activeChannels[item.ChannelID] = struct{}{}
+			activeMu.Unlock()
+
+			launched = true
+			idleRetry = 0
+			waitGroup.Add(1)
+			go func(item *model.GroupChannelCheckTaskItem) {
+				defer waitGroup.Done()
+				if err := processGroupChannelCheckTaskItem(task, item, ctx); err != nil {
+					setLastErr(err)
+				}
+				activeMu.Lock()
+				delete(activeChannels, item.ChannelID)
+				activeMu.Unlock()
+			}(item)
+		}
+
+		if stopScheduling {
+			break
+		}
+
+		activeMu.Lock()
+		activeCount := len(activeChannels)
+		activeMu.Unlock()
+		if activeCount == 0 {
+			taskAfter, refreshErr := op.GroupChannelCheckTaskRefreshSummary(task.ID, ctx)
+			if refreshErr != nil {
+				log.Warnf("failed to finalize group channel check summary (task=%d): %v", task.ID, refreshErr)
+				setLastErr(refreshErr)
+				break
+			}
+			if taskAfter.Status == model.GroupChannelCheckTaskStatusPending || taskAfter.Status == model.GroupChannelCheckTaskStatusRunning {
+				if idleRetry >= 5 {
+					setLastErrText("task finished unexpectedly")
+					break
+				}
+				idleRetry++
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			break
+		}
+
+		if !launched {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+
+	waitGroup.Wait()
+	return getLastErr()
+}
+
+func nextGroupChannelCheckPendingItem(taskID int64, busyChannels map[int]struct{}, ctx context.Context) (*model.GroupChannelCheckTaskItem, error) {
+	items, err := op.GroupChannelCheckTaskListPendingItems(taskID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	for idx := range items {
+		if _, busy := busyChannels[items[idx].ChannelID]; busy {
+			continue
+		}
+		item := items[idx]
+		return &item, nil
+	}
+	return nil, nil
+}
+
+func processGroupChannelCheckTaskItem(task *model.GroupChannelCheckTask, item *model.GroupChannelCheckTaskItem, ctx context.Context) error {
+	if task == nil || item == nil {
+		return fmt.Errorf("group channel check task item is nil")
+	}
+
+	itemStart := time.Now().Unix()
+	if err := op.GroupChannelCheckTaskItemUpdate(item.ID, map[string]any{
+		"status":               model.GroupChannelCheckItemStatusRunning,
+		"started_at":           itemStart,
+		"finished_at":          int64(0),
+		"error":                "",
+		"response_status_code": 0,
+	}, ctx); err != nil {
+		log.Warnf("failed to mark group channel check item running (item=%d): %v", item.ID, err)
+		return err
+	}
+	if _, err := op.GroupChannelCheckTaskRefreshSummary(task.ID, ctx); err != nil {
+		log.Warnf("failed to refresh running group channel check summary (task=%d): %v", task.ID, err)
+	}
+
+	result := probeGroupChannelCheckItem(item.ChannelID, item.ModelName)
+	finishedAt := time.Now().Unix()
+	finishedItem := *item
+	finishedItem.RequestKind = result.requestKind
+	finishedItem.RequestURL = result.requestURL
+	finishedItem.BaseURL = result.baseURL
+	finishedItem.ChannelKeyID = result.channelKeyID
+	finishedItem.ChannelKeyIndex = result.channelKeyIndex
+	finishedItem.ChannelKeyPreview = result.channelKeyPreview
+	finishedItem.ChannelKeyRemark = result.channelKeyRemark
+	finishedItem.ResponseStatusCode = result.responseStatusCode
+	finishedItem.DurationMs = result.durationMs
+	finishedItem.RequestContent = result.requestContent
+	finishedItem.ResponsePreview = result.responsePreview
+	finishedItem.ResponseContent = result.responseContent
+	finishedItem.FinishedAt = finishedAt
+	finishedItem.Attempts = result.attempts
+	if result.err != nil {
+		finishedItem.Status = model.GroupChannelCheckItemStatusFailed
+		finishedItem.Error = result.err.Error()
+	} else {
+		finishedItem.Status = model.GroupChannelCheckItemStatusSuccess
+		finishedItem.Error = ""
+	}
+
+	if err := op.GroupChannelCheckTaskItemSaveResult(finishedItem, ctx); err != nil {
+		log.Warnf("failed to update group channel check item result (item=%d): %v", item.ID, err)
+		return err
+	}
+
+	group, groupErr := op.GroupGet(task.GroupID, ctx)
+	if groupErr == nil {
+		if err := op.GroupChannelCheckStateUpsertByItem(*group, finishedItem, ctx); err != nil {
+			log.Warnf("failed to sync group channel check state (item=%d): %v", item.ID, err)
+		}
+	}
+	if _, err := op.GroupChannelCheckTaskRefreshSummary(task.ID, ctx); err != nil {
+		log.Warnf("failed to refresh finished group channel check summary (task=%d): %v", task.ID, err)
+	}
+
+	return result.err
 }
 
 func probeGroupChannelCheckItem(channelID int, modelName string) (result groupChannelCheckProbeResult) {

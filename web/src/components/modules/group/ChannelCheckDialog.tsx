@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle2, ChevronDown, Clock, KeyRound, Loader2, RefreshCw, XIcon } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, Clock, KeyRound, Loader2, RefreshCw, XIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
     type GroupChannelCheckAttempt,
@@ -178,6 +178,8 @@ export function GroupChannelCheckDialog({
     creating,
     onRetry,
     retrying,
+    onRetrySelected,
+    retryingSelected,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -185,6 +187,8 @@ export function GroupChannelCheckDialog({
     creating?: boolean;
     onRetry?: () => void;
     retrying?: boolean;
+    onRetrySelected?: (item: GroupChannelCheckTaskItem) => void;
+    retryingSelected?: boolean;
 }) {
     const t = useTranslations('group.healthCheck');
     const taskQuery = useGroupChannelCheckTaskDetail(taskId ?? undefined, open && !!taskId);
@@ -192,7 +196,6 @@ export function GroupChannelCheckDialog({
     const task = taskQuery.data;
     const items = useMemo(() => task?.items ?? [], [task?.items]);
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-    const [detailExpandedOverride, setDetailExpandedOverride] = useState<boolean | null>(null);
 
     const effectiveSelectedItemId = useMemo(() => {
         if (items.length === 0) return null;
@@ -225,7 +228,6 @@ export function GroupChannelCheckDialog({
     const selectedItem = useMemo(() => {
         return sortedItems.find((item) => item.id === effectiveSelectedItemId) ?? sortedItems[0];
     }, [effectiveSelectedItemId, sortedItems]);
-    const detailExpanded = detailExpandedOverride ?? true;
     const selectedItemAttempts = useMemo(() => {
         if (!selectedItem) return [];
         return selectedItem.attempts && selectedItem.attempts.length > 0
@@ -259,10 +261,15 @@ export function GroupChannelCheckDialog({
         '按测活结果同步启用状态',
         ['group.healthCheck.actions.syncStatus', 'actions.syncStatus']
     );
-    const retryText = withTranslationFallback(
-        t('actions.retry'),
+    const retrySelectedText = withTranslationFallback(
+        t('actions.retrySelected'),
         '再测一次',
-        ['group.healthCheck.actions.retry', 'actions.retry']
+        ['group.healthCheck.actions.retrySelected', 'actions.retrySelected']
+    );
+    const retryAllText = withTranslationFallback(
+        t('actions.retryAll'),
+        '全部重测',
+        ['group.healthCheck.actions.retryAll', 'actions.retryAll']
     );
 
     const handleSyncStatus = async () => {
@@ -295,7 +302,6 @@ export function GroupChannelCheckDialog({
 
     const handleDialogOpenChange = (nextOpen: boolean) => {
         if (!nextOpen) {
-            setDetailExpandedOverride(null);
             setSelectedItemId(null);
         }
 
@@ -397,7 +403,6 @@ export function GroupChannelCheckDialog({
                                             type="button"
                                             onClick={() => {
                                                 setSelectedItemId(item.id);
-                                                setDetailExpandedOverride(true);
                                             }}
                                             className={cn(
                                                 'w-full min-w-0 overflow-hidden rounded-2xl border px-3 py-2.5 text-left transition-colors',
@@ -452,7 +457,7 @@ export function GroupChannelCheckDialog({
                                             type="button"
                                             onClick={handleSyncStatus}
                                             disabled={!taskId || syncTaskStatus.isPending}
-                                            className="min-w-0 flex-1 rounded-xl"
+                                            className="h-8 min-w-0 flex-1 rounded-xl px-3 text-xs"
                                         >
                                             {syncTaskStatus.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                                             {syncStatusText}
@@ -462,10 +467,10 @@ export function GroupChannelCheckDialog({
                                             variant="secondary"
                                             onClick={onRetry}
                                             disabled={!onRetry || retrying}
-                                            className="shrink-0 rounded-xl"
+                                            className="h-8 shrink-0 rounded-xl px-3 text-xs"
                                         >
                                             {retrying ? <Loader2 className="size-4 animate-spin" /> : <Activity className="size-4" />}
-                                            {retryText}
+                                            {retryAllText}
                                         </Button>
                                     </div>
                                 </div>
@@ -494,37 +499,36 @@ export function GroupChannelCheckDialog({
                                                 </div>
                                                 <Button
                                                     type="button"
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => setDetailExpandedOverride(!detailExpanded)}
-                                                    className="size-7 rounded-lg bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+                                                    variant="secondary"
+                                                    onClick={() => onRetrySelected?.(selectedItem)}
+                                                    disabled={!onRetrySelected || retryingSelected}
+                                                    className="h-8 rounded-xl px-3 text-xs"
                                                 >
-                                                    <ChevronDown className={cn('size-4 transition-transform', !detailExpanded && '-rotate-90')} />
+                                                    {retryingSelected ? <Loader2 className="size-3.5 animate-spin" /> : <Activity className="size-3.5" />}
+                                                    {retrySelectedText}
                                                 </Button>
                                             </div>
 
-                                            {detailExpanded && (
-                                                <div className="mt-3 space-y-2 border-t border-border/70 pt-3 text-xs">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="shrink-0 text-muted-foreground">{apiAddressText}</span>
-                                                        <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                                            {selectedItem.request_url || selectedItem.base_url || '-'}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="shrink-0 text-muted-foreground">{requestText}</span>
-                                                        <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                                            {selectedItem.request_content?.trim() ? selectedItem.request_content : '-'}
-                                                        </div>
-                                                        <CopyIconButton
-                                                            text={selectedItem.request_content?.trim() ? selectedItem.request_content : ''}
-                                                            className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                                                            copyIconClassName="size-3.5"
-                                                            checkIconClassName="size-3.5 text-primary"
-                                                        />
+                                            <div className="mt-3 space-y-2 border-t border-border/70 pt-3 text-xs">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="shrink-0 text-muted-foreground">{apiAddressText}</span>
+                                                    <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                                        {selectedItem.request_url || selectedItem.base_url || '-'}
                                                     </div>
                                                 </div>
-                                            )}
+                                                <div className="flex items-center gap-3">
+                                                    <span className="shrink-0 text-muted-foreground">{requestText}</span>
+                                                    <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                                        {selectedItem.request_content?.trim() ? selectedItem.request_content : '-'}
+                                                    </div>
+                                                    <CopyIconButton
+                                                        text={selectedItem.request_content?.trim() ? selectedItem.request_content : ''}
+                                                        className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                                        copyIconClassName="size-3.5"
+                                                        checkIconClassName="size-3.5 text-primary"
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
 
                                         <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4">

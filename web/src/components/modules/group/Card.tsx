@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Trash2, X, Pencil, Activity, Settings2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type Group, useDeleteGroup, useUpdateGroup, useEnableGroupItem } from '@/api/endpoints/group';
-import { type GroupChannelCheckTask, GroupChannelCheckTaskStatus, isGroupChannelCheckTaskActive, useCreateGroupChannelCheckTask } from '@/api/endpoints/group-channel-check';
+import { type GroupChannelCheckTask, type GroupChannelCheckTaskItem, GroupChannelCheckTaskStatus, isGroupChannelCheckTaskActive, useCreateGroupChannelCheckTask } from '@/api/endpoints/group-channel-check';
 import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -405,6 +405,39 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
         );
     }, [createChannelCheckTask, group.id, t]);
 
+    const handleRetrySelectedChannelCheck = useCallback((item: GroupChannelCheckTaskItem) => {
+        if (!group.id) return;
+        createChannelCheckTask.mutate(
+            {
+                group_id: group.id,
+                group_item_id: item.group_item_id,
+                channel_id: item.channel_id,
+                model_name: item.model_name,
+            },
+            {
+                onSuccess: (task) => {
+                    setChannelCheckOpen(true);
+                    setSelectedChannelCheckTaskId(task.id);
+                    toast.success(withTranslationFallback(
+                        t('healthCheck.toast.created'),
+                        '已加入测活队列',
+                        ['group.healthCheck.toast.created', 'healthCheck.toast.created']
+                    ));
+                },
+                onError: (error) => {
+                    toast.error(
+                        withTranslationFallback(
+                            t('healthCheck.toast.createFailed'),
+                            '创建测活任务失败',
+                            ['group.healthCheck.toast.createFailed', 'healthCheck.toast.createFailed']
+                        ),
+                        { description: error.message }
+                    );
+                },
+            }
+        );
+    }, [createChannelCheckTask, group.id, t]);
+
     const handleOpenAutoHealthCheckConfig = useCallback(() => {
         setAutoHealthCheckInterval(String(group.auto_health_check_interval_minutes || 30));
         setAutoHealthCheckFailThreshold(String(group.auto_health_check_fail_threshold || 1));
@@ -784,6 +817,8 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                 creating={createChannelCheckTask.isPending && !selectedChannelCheckTaskId}
                 onRetry={handleRetryBatchChannelCheck}
                 retrying={createChannelCheckTask.isPending}
+                onRetrySelected={handleRetrySelectedChannelCheck}
+                retryingSelected={createChannelCheckTask.isPending}
             />
         </>
     );
