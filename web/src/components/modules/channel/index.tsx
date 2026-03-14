@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { useWindowSize } from '@uidotdev/usehooks';
 import { AnimatePresence, motion } from 'motion/react';
 import { useChannelList } from '@/api/endpoints/channel';
 import { Card } from './Card';
@@ -13,7 +14,9 @@ const CHANNEL_CARD_HEIGHT = 168;
 
 export function Channel() {
     const { data: channelsData } = useChannelList();
+    const { width } = useWindowSize();
     const pageKey = 'channel' as const;
+    const isMobile = !!width && width < 768;
     const pageSize = useGridPageSize({
         itemHeight: CHANNEL_CARD_HEIGHT,
         gap: 16,
@@ -37,8 +40,8 @@ export function Channel() {
     // Sync to store for Toolbar to display pagination info
     useEffect(() => {
         setTotalItems(pageKey, filteredChannels.length);
-        setPageSize(pageKey, pageSize);
-    }, [filteredChannels.length, pageSize, pageKey, setTotalItems, setPageSize]);
+        setPageSize(pageKey, isMobile ? Math.max(filteredChannels.length, 1) : pageSize);
+    }, [filteredChannels.length, isMobile, pageSize, pageKey, setTotalItems, setPageSize]);
 
     // Reset to page 1 when search term changes
     useEffect(() => {
@@ -50,10 +53,13 @@ export function Channel() {
         return filteredChannels.slice(start, start + pageSize);
     }, [filteredChannels, page, pageSize]);
 
+    const visibleChannels = isMobile ? filteredChannels : pagedChannels;
+    const motionKey = isMobile ? 'channel-mobile-list' : `channel-page-${page}`;
+
     return (
         <AnimatePresence mode="popLayout" initial={false} custom={direction}>
             <motion.div
-                key={`channel-page-${page}`}
+                key={motionKey}
                 custom={direction}
                 variants={{
                     enter: (d: number) => ({ x: d >= 0 ? 24 : -24, opacity: 0 }),
@@ -67,7 +73,7 @@ export function Channel() {
             >
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     <AnimatePresence mode="popLayout">
-                        {pagedChannels.map((channel, index) => (
+                        {visibleChannels.map((channel, index) => (
                             <motion.div
                                 key={"channel-" + channel.raw.id}
                                 initial={{ opacity: 0, y: 20 }}

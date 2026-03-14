@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useWindowSize } from '@uidotdev/usehooks';
 import { ChevronLeft, ChevronRight, Plus, Search, X, Trash2, ArrowUpDown } from 'lucide-react'; // [fork] added Trash2, ArrowUpDown
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -82,6 +83,7 @@ function LogClearButton() {
 
 export function Toolbar() {
     const { activeItem } = useNavStore();
+    const { width } = useWindowSize();
     const searchTerm = useSearchStore((s) => s.searchTerms[activeItem] || '');
     const setSearchTerm = useSearchStore((s) => s.setSearchTerm);
     const page = usePaginationStore((s) => s.getPage(activeItem));
@@ -90,6 +92,7 @@ export function Toolbar() {
     const nextPage = usePaginationStore((s) => s.nextPage);
     const setPage = usePaginationStore((s) => s.setPage);
     const [searchExpanded, setSearchExpanded] = useState(false);
+    const hidePagination = activeItem === 'channel' && !!width && width < 768;
 
     useEffect(() => {
         queueMicrotask(() => {
@@ -150,35 +153,37 @@ export function Toolbar() {
                     </div>
 
                     {/* 页码指示器 */}
-                    <div className="flex items-center h-9 rounded-xl border">
-                        <button
-                            type="button"
-                            aria-label="Previous page"
-                            onClick={() => prevPage(activeItem)}
-                            disabled={page <= 1}
-                            className="size-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
-                        >
-                            <ChevronLeft className="size-4" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setPage(activeItem, 1)}
-                            className="px-2 text-sm tabular-nums text-muted-foreground hover:text-foreground"
-                            aria-label="Page indicator"
-                            title="Click to go to first page"
-                        >
-                            {page}/{totalPages}
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Next page"
-                            onClick={() => nextPage(activeItem)}
-                            disabled={page >= totalPages}
-                            className="size-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
-                        >
-                            <ChevronRight className="size-4" />
-                        </button>
-                    </div>
+                    {!hidePagination && (
+                        <div className="flex items-center h-9 rounded-xl border">
+                            <button
+                                type="button"
+                                aria-label="Previous page"
+                                onClick={() => prevPage(activeItem)}
+                                disabled={page <= 1}
+                                className="size-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
+                            >
+                                <ChevronLeft className="size-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPage(activeItem, 1)}
+                                className="px-2 text-sm tabular-nums text-muted-foreground hover:text-foreground"
+                                aria-label="Page indicator"
+                                title="Click to go to first page"
+                            >
+                                {page}/{totalPages}
+                            </button>
+                            <button
+                                type="button"
+                                aria-label="Next page"
+                                onClick={() => nextPage(activeItem)}
+                                disabled={page >= totalPages}
+                                className="size-8 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground"
+                            >
+                                <ChevronRight className="size-4" />
+                            </button>
+                        </div>
+                    )}
 
                     {/* [fork] 分组排序按钮 */}
                     {activeItem === 'group' && (
