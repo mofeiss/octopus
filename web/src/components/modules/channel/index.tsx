@@ -8,8 +8,8 @@ import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar
 import { EASING } from '@/lib/animations/fluid-transitions';
 import { useGridPageSize } from '@/hooks/use-grid-page-size';
 
-/** Channel card height: h-54 = 216px */
-const CHANNEL_CARD_HEIGHT = 216;
+/** Channel card height estimate for grid pagination */
+const CHANNEL_CARD_HEIGHT = 168;
 
 export function Channel() {
     const { data: channelsData } = useChannelList();
