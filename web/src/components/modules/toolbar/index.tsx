@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useWindowSize } from '@uidotdev/usehooks';
 import { ChevronLeft, ChevronRight, Plus, Search, X, Trash2, ArrowUpDown } from 'lucide-react'; // [fork] added Trash2, ArrowUpDown
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -83,7 +82,6 @@ function LogClearButton() {
 
 export function Toolbar() {
     const { activeItem } = useNavStore();
-    const { width } = useWindowSize();
     const searchTerm = useSearchStore((s) => s.searchTerms[activeItem] || '');
     const setSearchTerm = useSearchStore((s) => s.setSearchTerm);
     const page = usePaginationStore((s) => s.getPage(activeItem));
@@ -92,7 +90,7 @@ export function Toolbar() {
     const nextPage = usePaginationStore((s) => s.nextPage);
     const setPage = usePaginationStore((s) => s.setPage);
     const [searchExpanded, setSearchExpanded] = useState(false);
-    const hidePagination = activeItem === 'channel' && !!width && width < 768;
+    const hidePagination = activeItem === 'channel' || activeItem === 'group';
 
     useEffect(() => {
         queueMicrotask(() => {

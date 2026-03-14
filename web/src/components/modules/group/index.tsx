@@ -7,28 +7,15 @@ import { useGroupList } from '@/api/endpoints/group';
 import { useGroupChannelCheckLatestTasks } from '@/api/endpoints/group-channel-check';
 import { usePaginationStore, useSearchStore } from '@/components/modules/toolbar';
 import { EASING } from '@/lib/animations/fluid-transitions';
-import { useGridPageSize } from '@/hooks/use-grid-page-size';
-import { useIsMobile } from '@/hooks/use-mobile';
-
-/** Group card approximate height (variable due to content) */
-const GROUP_CARD_HEIGHT = 330;
 
 export function Group() {
     const { data: groups } = useGroupList();
     const { data: latestChannelCheckTasks = [] } = useGroupChannelCheckLatestTasks();
-    const isMobile = useIsMobile();
     const pageKey = 'group' as const;
-    const pageSize = useGridPageSize({
-        itemHeight: GROUP_CARD_HEIGHT,
-        gap: 16,
-        columns: { default: 1, md: 2, lg: 2 }, // [fork] 分组卡片最多 2 列
-    });
     const searchTerm = useSearchStore((s) => s.getSearchTerm(pageKey));
-    const page = usePaginationStore((s) => s.getPage(pageKey));
     const setPage = usePaginationStore((s) => s.setPage);
     const setTotalItems = usePaginationStore((s) => s.setTotalItems);
     const setPageSize = usePaginationStore((s) => s.setPageSize);
-    const direction = usePaginationStore((s) => s.getDirection(pageKey));
 
     const filteredGroups = useMemo(() => {
         if (!groups) return [];
@@ -38,47 +25,16 @@ export function Group() {
         return sorted.filter((g) => g.name.toLowerCase().includes(term));
     }, [groups, searchTerm]);
 
-    const pagedGroupBuckets = useMemo(() => {
-        const buckets: typeof filteredGroups[] = [];
-        const effectivePageSize = Math.max(1, pageSize);
-
-        for (let index = 0; index < filteredGroups.length;) {
-            let bucketSize = effectivePageSize;
-            if (isMobile) {
-                const firstGroup = filteredGroups[index];
-                const configuredItemCount = firstGroup?.items?.length ?? 0;
-                if (configuredItemCount > 5) {
-                    bucketSize = 1; // [fork] 移动端首张分组卡配置项过多时独占一页
-                }
-            }
-
-            buckets.push(filteredGroups.slice(index, index + bucketSize));
-            index += bucketSize;
-        }
-
-        return buckets;
-    }, [filteredGroups, isMobile, pageSize]);
-
     // Sync to store for Toolbar to display pagination info
     useEffect(() => {
-        if (isMobile) {
-            setTotalItems(pageKey, pagedGroupBuckets.length);
-            setPageSize(pageKey, 1);
-            return;
-        }
-
         setTotalItems(pageKey, filteredGroups.length);
-        setPageSize(pageKey, pageSize);
-    }, [filteredGroups.length, isMobile, pageSize, pageKey, pagedGroupBuckets.length, setTotalItems, setPageSize]);
+        setPageSize(pageKey, Math.max(filteredGroups.length, 1));
+    }, [filteredGroups.length, pageKey, setTotalItems, setPageSize]);
 
     // Reset to page 1 when search term changes
     useEffect(() => {
         setPage(pageKey, 1);
     }, [searchTerm, pageKey, setPage]);
-
-    const pagedGroups = useMemo(() => {
-        return pagedGroupBuckets[page - 1] ?? [];
-    }, [page, pagedGroupBuckets]);
 
     const latestTaskByGroupId = useMemo(() => {
         const map = new Map<number, typeof latestChannelCheckTasks[number]>();
@@ -89,14 +45,13 @@ export function Group() {
     }, [latestChannelCheckTasks]);
 
     return (
-        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+        <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
-                key={`group-page-${page}`}
-                custom={direction}
+                key="group-list"
                 variants={{
-                    enter: (d: number) => ({ x: d >= 0 ? 24 : -24, opacity: 0 }),
-                    center: { x: 0, opacity: 1 },
-                    exit: (d: number) => ({ x: d >= 0 ? -24 : 24, opacity: 0 }),
+                    enter: { opacity: 0, y: 12 },
+                    center: { opacity: 1, y: 0 },
+                    exit: { opacity: 0, y: -12 },
                 }}
                 initial="enter"
                 animate="center"
@@ -105,7 +60,7 @@ export function Group() {
             >
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                     <AnimatePresence mode="popLayout">
-                        {pagedGroups.map((group, index) => (
+                        {filteredGroups.map((group, index) => (
                             <motion.div
                                 key={group.id}
                                 initial={{ opacity: 0, y: 20 }}
