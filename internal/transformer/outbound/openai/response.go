@@ -438,6 +438,14 @@ type ResponsesStreamEvent struct {
 // Conversion functions
 
 func ConvertToResponsesRequest(req *model.InternalLLMRequest) *ResponsesRequest {
+	user := req.User
+	metadata := req.Metadata
+	// [fork] Anthropic metadata.user_id should behave like OpenAI user on Responses,
+	// and must not be forwarded as Responses metadata for Codex-compatible upstreams.
+	if req.RawAPIFormat == model.APIFormatAnthropicMessage {
+		user, metadata = normalizeAnthropicMetadataForResponses(user, metadata)
+	}
+
 	result := &ResponsesRequest{
 		Model:             req.Model,
 		Temperature:       req.Temperature,
@@ -445,8 +453,8 @@ func ConvertToResponsesRequest(req *model.InternalLLMRequest) *ResponsesRequest 
 		Stream:            req.Stream,
 		Store:             req.Store,
 		ServiceTier:       req.ServiceTier,
-		User:              req.User,
-		Metadata:          req.Metadata,
+		User:              user,
+		Metadata:          metadata,
 		MaxOutputTokens:   req.MaxCompletionTokens,
 		ParallelToolCalls: req.ParallelToolCalls,
 	}
@@ -484,6 +492,33 @@ func ConvertToResponsesRequest(req *model.InternalLLMRequest) *ResponsesRequest 
 	}
 
 	return result
+}
+
+func normalizeAnthropicMetadataForResponses(user *string, metadata map[string]string) (*string, map[string]string) {
+	if len(metadata) == 0 {
+		return user, metadata
+	}
+
+	userID := strings.TrimSpace(metadata["user_id"])
+	if user == nil && userID != "" {
+		user = lo.ToPtr(userID)
+	}
+	if userID == "" {
+		return user, metadata
+	}
+
+	filtered := make(map[string]string, len(metadata)-1)
+	for key, value := range metadata {
+		if key == "user_id" {
+			continue
+		}
+		filtered[key] = value
+	}
+	if len(filtered) == 0 {
+		return user, nil
+	}
+
+	return user, filtered
 }
 
 func convertInstructionsFromMessages(msgs []model.Message) string {

@@ -71,6 +71,41 @@ func TestSnapshotHTTPRequestBodyDiffersAcrossOutboundFormats(t *testing.T) {
 	if respBody == marshalInternalRequestForTest(t, req3) {
 		t.Fatalf("expected responses outbound body to differ from internal request")
 	}
+
+	req4, err := (&anthropicInbound.MessagesInbound{}).TransformRequest(ctx, []byte(`{"model":"claude-3-7-sonnet","max_tokens":64,"messages":[{"role":"user","content":"hello"}],"metadata":{"user_id":"anthropic-user"}}`))
+	if err != nil {
+		t.Fatalf("transform anthropic inbound request with metadata failed: %v", err)
+	}
+	if req4.Metadata["user_id"] != "anthropic-user" {
+		t.Fatalf("expected internal metadata user_id to be preserved, got %#v", req4.Metadata)
+	}
+	if req4.User != nil {
+		t.Fatalf("expected anthropic inbound request user to remain unset, got %q", *req4.User)
+	}
+	respReqWithMetadata, err := (&openaiOutbound.ResponseOutbound{}).TransformRequest(ctx, req4, "https://example.com/v1", "key")
+	if err != nil {
+		t.Fatalf("transform responses outbound request with metadata failed: %v", err)
+	}
+	respBodyWithMetadata := snapshotHTTPRequestBody(respReqWithMetadata)
+	if respBodyWithMetadata == "" {
+		t.Fatalf("expected responses outbound body with metadata")
+	}
+
+	var responsesPayload struct {
+		User     *string           `json:"user"`
+		Metadata map[string]string `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(respBodyWithMetadata), &responsesPayload); err != nil {
+		t.Fatalf("unmarshal responses outbound body failed: %v", err)
+	}
+	if responsesPayload.User == nil || *responsesPayload.User != "anthropic-user" {
+		t.Fatalf("expected anthropic user_id to be mapped to user, got %#v", responsesPayload.User)
+	}
+	if responsesPayload.Metadata != nil {
+		if _, exists := responsesPayload.Metadata["user_id"]; exists {
+			t.Fatalf("expected anthropic user_id to be removed from metadata, got %#v", responsesPayload.Metadata)
+		}
+	}
 }
 
 func marshalInternalRequestForTest(t *testing.T, req *transformerModel.InternalLLMRequest) string {
