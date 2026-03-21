@@ -26,6 +26,10 @@ type RelayMetrics struct {
 	// 请求和响应内容
 	InternalRequest  *transformerModel.InternalLLMRequest
 	InternalResponse *transformerModel.InternalLLMResponse
+	// [fork] request snapshots for detail diagnostics
+	InternalRequestContent  string
+	OutboundRequestContent  string
+	OutboundRequestProtocol string
 
 	// 统计指标
 	ActualModel string
@@ -33,12 +37,18 @@ type RelayMetrics struct {
 }
 
 func NewRelayMetrics(apiKeyID int, requestModel string, req *transformerModel.InternalLLMRequest) *RelayMetrics {
-	return &RelayMetrics{
+	metrics := &RelayMetrics{
 		APIKeyID:        apiKeyID,
 		RequestModel:    requestModel,
 		StartTime:       time.Now(),
 		InternalRequest: req,
 	}
+	if req != nil {
+		if reqJSON, err := json.Marshal(req); err == nil {
+			metrics.InternalRequestContent = string(reqJSON)
+		}
+	}
+	return metrics
 }
 
 func (m *RelayMetrics) SetFirstTokenTime(t time.Time) {
@@ -74,6 +84,12 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
 	}
 	m.Stats.OutputCost = float64(usage.CompletionTokens) * modelPrice.Output * 1e-6
+}
+
+// [fork] keep the last outbound request snapshot so log detail can compare all three layers.
+func (m *RelayMetrics) SetOutboundRequest(content string, protocol string) {
+	m.OutboundRequestContent = content
+	m.OutboundRequestProtocol = protocol
 }
 
 func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attempts []model.ChannelAttempt) {
@@ -203,10 +219,12 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 
 	// 请求内容
 	if m.InternalRequest != nil {
-		if reqJSON, jsonErr := json.Marshal(m.InternalRequest); jsonErr == nil {
-			relayLog.RequestContent = string(reqJSON)
-		}
+		relayLog.OriginalRequestContent = string(m.InternalRequest.RawRequest)
+		relayLog.OriginalRequestProtocol = relayProtocolNameFromAPIFormat(m.InternalRequest.RawAPIFormat)
 	}
+	relayLog.RequestContent = m.InternalRequestContent
+	relayLog.OutboundRequestContent = m.OutboundRequestContent
+	relayLog.OutboundRequestProtocol = m.OutboundRequestProtocol
 
 	// 响应内容
 	if m.InternalResponse != nil {

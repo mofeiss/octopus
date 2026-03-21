@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
 import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
@@ -46,6 +46,8 @@ interface RetryBadgeWithTooltipProps {
     brandColor: string;
     attempts: ChannelAttempt[];
 }
+
+type RequestSectionKey = 'original' | 'internal' | 'outbound';
 
 function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadgeWithTooltipProps) {
     const t = useTranslations('log.card');
@@ -212,6 +214,188 @@ function DeferredJsonContent({
     );
 }
 
+function buildProtocolSectionTitle(prefix: string, protocol: string | undefined): string {
+    const normalized = protocol?.trim();
+    if (!normalized) return prefix;
+    return `${prefix}(${normalized})`;
+}
+
+function RequestContentSection({
+    sectionValue,
+    value,
+    icon,
+    title,
+    parsedContent,
+    fallbackText,
+    isActive,
+    onActivate,
+}: {
+    sectionValue: RequestSectionKey;
+    value: string | undefined;
+    icon: ReactNode;
+    title: string;
+    parsedContent?: ParsedLogContent;
+    fallbackText: string;
+    isActive: boolean;
+    onActivate: (value: RequestSectionKey) => void;
+}) {
+    return (
+        <motion.div
+            initial={false}
+            animate={{ flexGrow: isActive ? 1 : 0 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className={cn(
+                'flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-background/70 transition-colors',
+                isActive ? 'flex-1' : 'shrink-0'
+            )}
+        >
+            <button
+                type="button"
+                className={cn(
+                    'flex items-center justify-between gap-3 px-3 md:px-4 py-3 text-left text-sm font-medium text-card-foreground transition-colors',
+                    isActive ? 'border-b border-border/80 bg-muted/35' : 'hover:bg-muted/30'
+                )}
+                aria-expanded={isActive}
+                onClick={() => onActivate(sectionValue)}
+            >
+                <div className="flex min-w-0 items-center gap-2 text-left">
+                    {icon}
+                    <span className="truncate">{title}</span>
+                </div>
+                {isActive ? (
+                    <ChevronUp className="size-4 shrink-0 text-muted-foreground" />
+                ) : (
+                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                )}
+            </button>
+            <div className={cn('min-h-0 overflow-hidden', isActive ? 'flex-1' : 'h-0')}>
+                <div className="h-full min-h-0 overflow-auto">
+                    <DeferredJsonContent
+                        content={value}
+                        parsedContent={parsedContent}
+                        fallbackText={fallbackText}
+                    />
+                </div>
+            </div>
+        </motion.div>
+    );
+}
+
+function RequestContentPanel({
+    inputTokens,
+    isDetailLoading,
+    isDetailLoadFailed,
+    originalRequestContent,
+    originalRequestParsedContent,
+    originalRequestTitle,
+    requestContent,
+    requestParsedContent,
+    outboundRequestContent,
+    outboundRequestParsedContent,
+    outboundRequestTitle,
+}: {
+    inputTokens: number;
+    isDetailLoading: boolean;
+    isDetailLoadFailed: boolean;
+    originalRequestContent: string | undefined;
+    originalRequestParsedContent?: ParsedLogContent;
+    originalRequestTitle: string;
+    requestContent: string | undefined;
+    requestParsedContent?: ParsedLogContent;
+    outboundRequestContent: string | undefined;
+    outboundRequestParsedContent?: ParsedLogContent;
+    outboundRequestTitle: string;
+}) {
+    const t = useTranslations('log.card');
+    const [activeRequestSection, setActiveRequestSection] = useState<RequestSectionKey | null>('original');
+
+    const handleActivate = (sectionValue: RequestSectionKey) => {
+        setActiveRequestSection((current) => current === sectionValue ? null : sectionValue);
+    };
+
+    return (
+        <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+            <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
+                <Send className="size-4 text-green-500" />
+                <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
+                <Badge variant="secondary" className="ml-auto text-xs">
+                    {inputTokens.toLocaleString()} {t('tokens')}
+                </Badge>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+                <AnimatePresence initial={false} mode="sync">
+                    {isDetailLoading ? (
+                        <motion.div
+                            key="request-loading"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2"
+                        >
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>{t('loadingDetail')}</span>
+                        </motion.div>
+                    ) : isDetailLoadFailed ? (
+                        <motion.pre
+                            key="request-failed"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed"
+                        >
+                            {t('detailLoadFailed')}
+                        </motion.pre>
+                    ) : (
+                        <motion.div
+                            key="request-content"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="h-full p-3 md:p-4"
+                        >
+                            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+                                <RequestContentSection
+                                    sectionValue="original"
+                                    value={originalRequestContent}
+                                    parsedContent={originalRequestParsedContent}
+                                    title={originalRequestTitle}
+                                    fallbackText={t('noRequestContent')}
+                                    isActive={activeRequestSection === 'original'}
+                                    onActivate={handleActivate}
+                                    icon={<ArrowDownToLine className="size-4 text-sky-500 shrink-0" />}
+                                />
+                                <RequestContentSection
+                                    sectionValue="internal"
+                                    value={requestContent}
+                                    parsedContent={requestParsedContent}
+                                    title={t('internalRequest')}
+                                    fallbackText={t('noRequestContent')}
+                                    isActive={activeRequestSection === 'internal'}
+                                    onActivate={handleActivate}
+                                    icon={<Cpu className="size-4 text-amber-500 shrink-0" />}
+                                />
+                                <RequestContentSection
+                                    sectionValue="outbound"
+                                    value={outboundRequestContent}
+                                    parsedContent={outboundRequestParsedContent}
+                                    title={outboundRequestTitle}
+                                    fallbackText={t('noRequestContent')}
+                                    isActive={activeRequestSection === 'outbound'}
+                                    onActivate={handleActivate}
+                                    icon={<ArrowUpFromLine className="size-4 text-emerald-500 shrink-0" />}
+                                />
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        </div>
+    );
+}
+
 function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: LogScope; onOpenLog?: (id: number) => void }) {
     const t = useTranslations('log.card');
     const { isOpen } = useMorphingDialog();
@@ -219,12 +403,21 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
     const shouldFetchDetail = isOpen && !!log.content_omitted;
     const detailQuery = useLogDetail({ id: log.id, scope, enabled: shouldFetchDetail });
 
+    const originalRequestContent = detailQuery.data?.original_request_content ?? log.original_request_content;
     const requestContent = detailQuery.data?.request_content ?? log.request_content;
+    const outboundRequestContent = detailQuery.data?.outbound_request_content ?? log.outbound_request_content;
     const responseContent = detailQuery.data?.response_content ?? log.response_content;
+    const originalRequestProtocol = detailQuery.data?.original_request_protocol ?? log.original_request_protocol;
+    const outboundRequestProtocol = detailQuery.data?.outbound_request_protocol ?? log.outbound_request_protocol;
+    const originalRequestParsedContent = detailQuery.data?.parsed_original_request_content ?? log.parsed_original_request_content;
     const requestParsedContent = detailQuery.data?.parsed_request_content ?? log.parsed_request_content;
+    const outboundRequestParsedContent = detailQuery.data?.parsed_outbound_request_content ?? log.parsed_outbound_request_content;
     const responseParsedContent = detailQuery.data?.parsed_response_content ?? log.parsed_response_content;
     const isDetailLoading = shouldFetchDetail && detailQuery.isLoading && !detailQuery.data;
     const isDetailLoadFailed = shouldFetchDetail && !detailQuery.data && !!detailQuery.error;
+
+    const originalRequestTitle = buildProtocolSectionTitle(t('originalRequestLabel'), originalRequestProtocol);
+    const outboundRequestTitle = buildProtocolSectionTitle(t('outboundRequestLabel'), outboundRequestProtocol);
 
     useEffect(() => {
         if (isOpen && !openStateRef.current) {
@@ -236,58 +429,20 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
     return (
         <div className="flex-1 min-h-0 overflow-hidden">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
-                <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
-                    <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                        <Send className="size-4 text-green-500" />
-                        <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
-                        <Badge variant="secondary" className="ml-auto text-xs">
-                            {log.input_tokens.toLocaleString()} {t('tokens')}
-                        </Badge>
-                    </div>
-                    <div className="flex-1 overflow-auto min-h-0">
-                        <AnimatePresence initial={false} mode="sync">
-                            {isDetailLoading ? (
-                                <motion.div
-                                    key={`request-loading-${log.id}`}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2"
-                                >
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    <span>{t('loadingDetail')}</span>
-                                </motion.div>
-                            ) : isDetailLoadFailed ? (
-                                <motion.pre
-                                    key={`request-failed-${log.id}`}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed"
-                                >
-                                    {t('detailLoadFailed')}
-                                </motion.pre>
-                            ) : (
-                                <motion.div
-                                    key={`request-content-${log.id}`}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="h-full"
-                                >
-                                    <DeferredJsonContent
-                                        content={requestContent}
-                                        parsedContent={requestParsedContent}
-                                        fallbackText={t('noRequestContent')}
-                                    />
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-                </div>
+                <RequestContentPanel
+                    key={`request-panel-${log.id}`}
+                    inputTokens={log.input_tokens}
+                    isDetailLoading={isDetailLoading}
+                    isDetailLoadFailed={isDetailLoadFailed}
+                    originalRequestContent={originalRequestContent}
+                    originalRequestParsedContent={originalRequestParsedContent}
+                    originalRequestTitle={originalRequestTitle}
+                    requestContent={requestContent}
+                    requestParsedContent={requestParsedContent}
+                    outboundRequestContent={outboundRequestContent}
+                    outboundRequestParsedContent={outboundRequestParsedContent}
+                    outboundRequestTitle={outboundRequestTitle}
+                />
                 <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
                     <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
                         <MessageSquare className="size-4 text-purple-500" />

@@ -172,6 +172,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 
 	// 转发请求
 	statusCode, fwdErr := ra.forward()
+	ra.metrics.SetOutboundRequest(ra.outboundRequestContent, ra.outboundRequestProtocol)
 
 	// 更新 channel key 状态
 	ra.usedKey.StatusCode = statusCode
@@ -237,6 +238,10 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return nil, nil, err
 	}
+	internalRequest.RawRequest = append([]byte(nil), body...)
+	if internalRequest.RawAPIFormat == "" {
+		internalRequest.RawAPIFormat = rawAPIFormatFromInboundType(inboundType)
+	}
 
 	// Pass through the original query parameters
 	internalRequest.Query = c.Request.URL.Query()
@@ -264,6 +269,8 @@ func (ra *relayAttempt) forward() (int, error) {
 		log.Warnf("failed to create request: %v", err)
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
+	ra.outboundRequestContent = snapshotHTTPRequestBody(outboundRequest)
+	ra.outboundRequestProtocol = relayProtocolNameFromOutboundType(ra.channel.Type)
 
 	// 复制请求头
 	ra.copyHeaders(outboundRequest)

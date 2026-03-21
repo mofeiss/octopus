@@ -51,6 +51,10 @@ export interface RelayLog {
     use_time: number;            // 总用时(毫秒)
     cost: number;                // 消耗费用
     request_content: string;     // 请求内容
+    original_request_content: string;    // 原始请求内容
+    original_request_protocol?: string;  // 原始请求协议
+    outbound_request_content: string;    // 出站请求内容
+    outbound_request_protocol?: string;  // 出站请求协议
     response_content: string;    // 响应内容
     error: string;               // 错误信息
     attempts?: ChannelAttempt[]; // 所有尝试记录
@@ -64,7 +68,9 @@ export interface RelayLog {
     // [fork] summary payload marker
     content_omitted?: boolean;
     // [fork] parsed content cache for instant detail render
+    parsed_original_request_content?: ParsedLogContent;
     parsed_request_content?: ParsedLogContent;
+    parsed_outbound_request_content?: ParsedLogContent;
     parsed_response_content?: ParsedLogContent;
 }
 
@@ -102,8 +108,14 @@ function parseLogContent(content: string): ParsedLogContent {
 export function hydrateLogDetail(detail: RelayLog): RelayLog {
     const hydrated: RelayLog = { ...detail };
 
+    if (detail.original_request_content && !detail.parsed_original_request_content) {
+        hydrated.parsed_original_request_content = parseLogContent(detail.original_request_content);
+    }
     if (detail.request_content && !detail.parsed_request_content) {
         hydrated.parsed_request_content = parseLogContent(detail.request_content);
+    }
+    if (detail.outbound_request_content && !detail.parsed_outbound_request_content) {
+        hydrated.parsed_outbound_request_content = parseLogContent(detail.outbound_request_content);
     }
     if (detail.response_content && !detail.parsed_response_content) {
         hydrated.parsed_response_content = parseLogContent(detail.response_content);

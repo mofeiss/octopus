@@ -50,18 +50,20 @@ func TestRelayLogListSummaryOmitsContentAndMarksFlag(t *testing.T) {
 	ctx := setupRelayLogTestDB(t)
 
 	logEntry := model.RelayLog{
-		Time:             time.Now().Unix(),
-		RequestModelName: "gpt-4o-mini",
-		ChannelId:        1,
-		ChannelName:      "test-channel",
-		ActualModelName:  "gpt-4o-mini",
-		InputTokens:      10,
-		OutputTokens:     20,
-		Ftut:             123,
-		UseTime:          456,
-		Cost:             0.001,
-		RequestContent:   `{"req":"full"}`,
-		ResponseContent:  `{"resp":"full"}`,
+		Time:                   time.Now().Unix(),
+		RequestModelName:       "gpt-4o-mini",
+		ChannelId:              1,
+		ChannelName:            "test-channel",
+		ActualModelName:        "gpt-4o-mini",
+		InputTokens:            10,
+		OutputTokens:           20,
+		Ftut:                   123,
+		UseTime:                456,
+		Cost:                   0.001,
+		RequestContent:         `{"req":"full"}`,
+		OriginalRequestContent: `{"raw":"full"}`,
+		OutboundRequestContent: `{"outbound":"full"}`,
+		ResponseContent:        `{"resp":"full"}`,
 	}
 	if err := RelayLogAdd(ctx, logEntry); err != nil {
 		t.Fatalf("relay log add failed: %v", err)
@@ -84,6 +86,12 @@ func TestRelayLogListSummaryOmitsContentAndMarksFlag(t *testing.T) {
 	if logs[0].RequestContent != "" {
 		t.Fatalf("expected request content omitted, got %q", logs[0].RequestContent)
 	}
+	if logs[0].OriginalRequestContent != "" {
+		t.Fatalf("expected original request content omitted, got %q", logs[0].OriginalRequestContent)
+	}
+	if logs[0].OutboundRequestContent != "" {
+		t.Fatalf("expected outbound request content omitted, got %q", logs[0].OutboundRequestContent)
+	}
 	if logs[0].ResponseContent != "" {
 		t.Fatalf("expected response content omitted, got %q", logs[0].ResponseContent)
 	}
@@ -96,16 +104,20 @@ func TestRelayLogGetByIDRespectsAPIKeyScope(t *testing.T) {
 	ctx := setupRelayLogTestDB(t)
 
 	fullLog := model.RelayLog{
-		ID:               10001,
-		Time:             time.Now().Unix(),
-		RequestModelName: "gpt-4o",
-		ChannelId:        2,
-		ChannelName:      "scope-channel",
-		ActualModelName:  "gpt-4o",
-		RequestContent:   `{"request":"data"}`,
-		ResponseContent:  `{"response":"data"}`,
-		APIKeyID:         10,
-		APIKeyName:       "ak-10",
+		ID:                      10001,
+		Time:                    time.Now().Unix(),
+		RequestModelName:        "gpt-4o",
+		ChannelId:               2,
+		ChannelName:             "scope-channel",
+		ActualModelName:         "gpt-4o",
+		RequestContent:          `{"request":"data"}`,
+		OriginalRequestContent:  `{"raw":"request"}`,
+		OriginalRequestProtocol: "OpenAI",
+		OutboundRequestContent:  `{"outbound":"request"}`,
+		OutboundRequestProtocol: "Anthropic",
+		ResponseContent:         `{"response":"data"}`,
+		APIKeyID:                10,
+		APIKeyName:              "ak-10",
 	}
 	if err := db.GetDB().WithContext(ctx).Create(&fullLog).Error; err != nil {
 		t.Fatalf("insert scoped relay log failed: %v", err)
@@ -122,6 +134,9 @@ func TestRelayLogGetByIDRespectsAPIKeyScope(t *testing.T) {
 	}
 	if got.RequestContent == "" || got.ResponseContent == "" {
 		t.Fatalf("expected full content from detail endpoint path")
+	}
+	if got.OriginalRequestContent == "" || got.OutboundRequestContent == "" {
+		t.Fatalf("expected full request diagnostics from detail endpoint path")
 	}
 
 	mismatchName := "ak-11"

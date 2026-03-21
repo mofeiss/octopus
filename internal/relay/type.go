@@ -71,6 +71,9 @@ type relayAttempt struct {
 	channel              *dbmodel.Channel
 	usedKey              dbmodel.ChannelKey
 	firstTokenTimeOutSec int
+	// [fork] per-attempt outbound request snapshot for relay log detail
+	outboundRequestContent  string
+	outboundRequestProtocol string
 }
 
 // attemptResult 封装单次尝试的结果

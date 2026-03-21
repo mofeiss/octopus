@@ -207,6 +207,8 @@ func matchRelayLogAPIKeyScope(log model.RelayLog, apiKeyID *int, apiKeyName *str
 func relayLogToSummary(relayLog model.RelayLog) model.RelayLog {
 	summary := relayLog
 	summary.RequestContent = ""
+	summary.OriginalRequestContent = ""
+	summary.OutboundRequestContent = ""
 	summary.ResponseContent = ""
 	summary.ContentOmitted = true
 	return summary
@@ -286,7 +288,7 @@ func relayLogListWithContentFlag(
 				}
 			}
 			if !includeContent {
-				query = query.Omit("request_content", "response_content")
+				query = query.Omit("request_content", "original_request_content", "outbound_request_content", "response_content")
 			}
 
 			var dbLogs []model.RelayLog
