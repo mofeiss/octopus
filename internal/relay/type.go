@@ -9,6 +9,7 @@ import (
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/transformer/outbound"
 	"github.com/gin-gonic/gin"
 )
 
@@ -68,6 +69,7 @@ type relayAttempt struct {
 	*relayRequest // 嵌入请求级上下文
 
 	outAdapter           model.Outbound
+	resolvedType         outbound.OutboundType
 	channel              *dbmodel.Channel
 	usedKey              dbmodel.ChannelKey
 	firstTokenTimeOutSec int

@@ -255,6 +255,7 @@ export function ChannelForm({
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent className='rounded-xl'>
+                            <SelectItem className='rounded-xl' value={String(ChannelType.Auto)}>{t('typeAuto')}</SelectItem>
                             <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIChat)}>{t('typeOpenAIChat')}</SelectItem>
                             <SelectItem className='rounded-xl' value={String(ChannelType.OpenAIResponse)}>{t('typeOpenAIResponse')}</SelectItem>
                             <SelectItem className='rounded-xl' value={String(ChannelType.Anthropic)}>{t('typeAnthropic')}</SelectItem>

@@ -392,7 +392,12 @@ func probeGroupChannelCheckItem(channelID int, modelName string) (result groupCh
 		return
 	}
 
-	request, requestKind, err := buildGroupChannelCheckRequest(channel.Type, modelName)
+	resolvedType := channel.Type
+	if channel.Type == outbound.OutboundTypeAuto { // [fork] 测活默认按 chat/completions 语义验证 auto 渠道
+		resolvedType = outbound.OutboundTypeOpenAIChat
+	}
+
+	request, requestKind, err := buildGroupChannelCheckRequest(resolvedType, modelName)
 	if err != nil {
 		result.err = err
 		return
@@ -403,9 +408,9 @@ func probeGroupChannelCheckItem(channelID int, modelName string) (result groupCh
 		return
 	}
 
-	outAdapter := outbound.Get(channel.Type)
+	outAdapter := outbound.Get(resolvedType)
 	if outAdapter == nil {
-		result.err = fmt.Errorf("unsupported channel type: %d", channel.Type)
+		result.err = fmt.Errorf("unsupported channel type: %d", resolvedType)
 		return
 	}
 

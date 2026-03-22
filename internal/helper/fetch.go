@@ -3,6 +3,7 @@ package helper
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,8 @@ func FetchModels(ctx context.Context, request model.Channel) ([]string, error) {
 	}
 	fetchModel := make([]string, 0)
 	switch request.Type {
+	case outbound.OutboundTypeAuto: // [fork] auto 仅在 OpenAI / Responses / Anthropic 之间自动推导
+		fetchModel, err = fetchAutoModels(client, ctx, request)
 	case outbound.OutboundTypeAnthropic:
 		fetchModel, err = fetchAnthropicModels(client, ctx, request)
 	case outbound.OutboundTypeGemini:
@@ -46,6 +49,36 @@ func FetchModels(ctx context.Context, request model.Channel) ([]string, error) {
 		return matchModel, nil
 	}
 	return fetchModel, nil
+}
+
+// [fork] 渠道类型为 auto 时，管理端没有入站端点上下文，因此顺序尝试常用协议的模型列表接口。
+func fetchAutoModels(client *http.Client, ctx context.Context, request model.Channel) ([]string, error) {
+	type fetchCandidate struct {
+		name string
+		fn   func(*http.Client, context.Context, model.Channel) ([]string, error)
+	}
+
+	candidates := []fetchCandidate{
+		{name: "openai", fn: fetchOpenAIModels},
+		{name: "anthropic", fn: fetchAnthropicModels},
+	}
+
+	errors := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		models, err := candidate.fn(client, ctx, request)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", candidate.name, err))
+			continue
+		}
+		if len(models) > 0 {
+			return models, nil
+		}
+	}
+
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("auto fetch models failed: %s", strings.Join(errors, "; "))
+	}
+	return nil, nil
 }
 
 // refer: https://platform.openai.com/docs/api-reference/models/list

@@ -593,6 +593,7 @@
             "modelClearAll": "Clear All",
             "modelClearPublic": "Clear Public",
             "modelClearCustom": "Clear Custom",
+            "typeAuto": "Auto (auto)",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeOpenAIEmbedding": "OpenAI Embedding",

@@ -1,6 +1,9 @@
 package outbound
 
 import (
+	"fmt"
+
+	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound/authropic"
 	"github.com/bestruirui/octopus/internal/transformer/outbound/gemini"
@@ -17,6 +20,7 @@ const (
 	OutboundTypeGemini
 	OutboundTypeVolcengine
 	OutboundTypeOpenAIEmbedding
+	OutboundTypeAuto // [fork] 根据请求端点自动推导实际出站类型
 )
 
 // EmbeddingChannelTypes 定义支持 embedding 请求的 channel 类型集合
@@ -57,4 +61,20 @@ func Get(outboundType OutboundType) model.Outbound {
 		return factory()
 	}
 	return nil
+}
+
+// [fork] ResolveAutoByInboundType 根据请求端点语义，把 auto 渠道解析成实际出站类型。
+func ResolveAutoByInboundType(inboundType inbound.InboundType) (OutboundType, error) {
+	switch inboundType {
+	case inbound.InboundTypeOpenAIChat:
+		return OutboundTypeOpenAIChat, nil
+	case inbound.InboundTypeOpenAIResponse:
+		return OutboundTypeOpenAIResponse, nil
+	case inbound.InboundTypeAnthropic:
+		return OutboundTypeAnthropic, nil
+	case inbound.InboundTypeOpenAIEmbedding:
+		return OutboundTypeOpenAIEmbedding, nil
+	default:
+		return 0, fmt.Errorf("unsupported inbound type for auto channel: %d", inboundType)
+	}
 }

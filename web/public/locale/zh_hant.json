@@ -593,6 +593,7 @@
             "modelClearAll": "清除全部",
             "modelClearPublic": "清除公開模型",
             "modelClearCustom": "清除自訂模型",
+            "typeAuto": "自動推導 (auto)",
             "typeOpenAIChat": "OpenAI Chat",
             "typeOpenAIResponse": "OpenAI Response",
             "typeOpenAIEmbedding": "OpenAI Embedding",

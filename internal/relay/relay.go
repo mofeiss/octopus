@@ -108,19 +108,29 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			continue
 		}
 
+		resolvedType := channel.Type
+		if channel.Type == outbound.OutboundTypeAuto {
+			resolvedType, err = outbound.ResolveAutoByInboundType(inboundType)
+			if err != nil {
+				iter.Skip(channel.ID, 0, channel.Name, err.Error())
+				lastErr = err
+				continue
+			}
+		}
+
 		// 出站适配器（渠道级检查）
-		outAdapter := outbound.Get(channel.Type)
+		outAdapter := outbound.Get(resolvedType)
 		if outAdapter == nil {
-			iter.Skip(channel.ID, 0, channel.Name, fmt.Sprintf("unsupported channel type: %d", channel.Type))
+			iter.Skip(channel.ID, 0, channel.Name, fmt.Sprintf("unsupported channel type: %d", resolvedType))
 			continue
 		}
 
 		// 类型兼容性检查（渠道级）
-		if internalRequest.IsEmbeddingRequest() && !outbound.IsEmbeddingChannelType(channel.Type) {
+		if internalRequest.IsEmbeddingRequest() && !outbound.IsEmbeddingChannelType(resolvedType) {
 			iter.Skip(channel.ID, 0, channel.Name, "channel type not compatible with embedding request")
 			continue
 		}
-		if internalRequest.IsChatRequest() && !outbound.IsChatChannelType(channel.Type) {
+		if internalRequest.IsChatRequest() && !outbound.IsChatChannelType(resolvedType) {
 			iter.Skip(channel.ID, 0, channel.Name, "channel type not compatible with chat request")
 			continue
 		}
@@ -143,6 +153,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			ra := &relayAttempt{
 				relayRequest:         req,
 				outAdapter:           outAdapter,
+				resolvedType:         resolvedType,
 				channel:              channel,
 				usedKey:              usedKey,
 				firstTokenTimeOutSec: group.FirstTokenTimeOut,
@@ -270,7 +281,7 @@ func (ra *relayAttempt) forward() (int, error) {
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 	ra.outboundRequestContent = snapshotHTTPRequestBody(outboundRequest)
-	ra.outboundRequestProtocol = relayProtocolNameFromOutboundType(ra.channel.Type)
+	ra.outboundRequestProtocol = relayProtocolNameFromOutboundType(ra.resolvedType)
 
 	// 复制请求头
 	ra.copyHeaders(outboundRequest)
