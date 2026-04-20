@@ -21,6 +21,16 @@ type ResponseOutbound struct {
 	streamID    string
 	streamModel string
 	initialized bool
+
+	// [fork] Track streamed tool-call fragments so we only emit one complete
+	// tool invocation per call_id. Some Responses upstreams send arguments in
+	// deltas and then repeat the full JSON again in done/completed events.
+	toolCallState map[string]*responsesToolCallStreamState
+}
+
+type responsesToolCallStreamState struct {
+	hasArgumentDelta bool
+	completedEmitted bool
 }
 
 func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.InternalLLMRequest, baseUrl, key string) (*http.Request, error) {
@@ -154,6 +164,9 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 	if !o.initialized {
 		o.initialized = true
 	}
+	if o.toolCallState == nil {
+		o.toolCallState = make(map[string]*responsesToolCallStreamState)
+	}
 
 	// Parse the streaming event
 	var streamEvent ResponsesStreamEvent
@@ -208,6 +221,9 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 		}
 
 	case "response.function_call_arguments.delta":
+		state := o.getToolCallStreamState(streamEvent.CallID)
+		state.hasArgumentDelta = state.hasArgumentDelta || streamEvent.Delta != ""
+
 		resp.Choices = []model.Choice{
 			{
 				Index: 0,
@@ -230,6 +246,7 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 
 	case "response.output_item.added":
 		if streamEvent.Item != nil && streamEvent.Item.Type == "function_call" {
+			o.getToolCallStreamState(streamEvent.Item.CallID)
 			resp.Choices = []model.Choice{
 				{
 					Index: 0,
@@ -257,6 +274,12 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 			return nil, nil
 		}
 
+		state := o.getToolCallStreamState(streamEvent.CallID)
+		if state.completedEmitted || state.hasArgumentDelta {
+			return nil, nil
+		}
+		state.completedEmitted = true
+
 		resp.Choices = []model.Choice{
 			{
 				Index: 0,
@@ -280,6 +303,12 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 		if streamEvent.Item == nil || streamEvent.Item.Type != "function_call" {
 			return nil, nil
 		}
+
+		state := o.getToolCallStreamState(streamEvent.Item.CallID)
+		if state.completedEmitted || state.hasArgumentDelta {
+			return nil, nil
+		}
+		state.completedEmitted = true
 
 		resp.Choices = []model.Choice{
 			{
@@ -320,7 +349,7 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 			resp.Model = o.streamModel
 
 			if len(streamEvent.Response.Output) > 0 {
-				toolCalls := buildToolCallsFromResponsesItems(streamEvent.Response.Output)
+				toolCalls := o.buildPendingToolCallsFromResponsesItems(streamEvent.Response.Output)
 				if len(toolCalls) > 0 {
 					resp.Choices = []model.Choice{{
 						Index: 0,
@@ -333,7 +362,9 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 			}
 
 			var finishReason *string
-			if streamEvent.Response.Status != nil {
+			if len(resp.Choices) > 0 && resp.Choices[0].Delta != nil && len(resp.Choices[0].Delta.ToolCalls) > 0 {
+				finishReason = lo.ToPtr("tool_calls")
+			} else if streamEvent.Response.Status != nil {
 				switch *streamEvent.Response.Status {
 				case "completed":
 					finishReason = lo.ToPtr("stop")
@@ -366,6 +397,42 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 	}
 
 	return resp, nil
+}
+
+func (o *ResponseOutbound) getToolCallStreamState(callID string) *responsesToolCallStreamState {
+	if o.toolCallState == nil {
+		o.toolCallState = make(map[string]*responsesToolCallStreamState)
+	}
+	state, ok := o.toolCallState[callID]
+	if !ok {
+		state = &responsesToolCallStreamState{}
+		o.toolCallState[callID] = state
+	}
+	return state
+}
+
+func (o *ResponseOutbound) buildPendingToolCallsFromResponsesItems(items []ResponsesItem) []model.ToolCall {
+	toolCalls := make([]model.ToolCall, 0)
+	for idx, item := range items {
+		if item.Type != "function_call" {
+			continue
+		}
+		state := o.getToolCallStreamState(item.CallID)
+		if state.completedEmitted || state.hasArgumentDelta {
+			continue
+		}
+		state.completedEmitted = true
+		toolCalls = append(toolCalls, model.ToolCall{
+			Index: idx,
+			ID:    item.CallID,
+			Type:  "function",
+			Function: model.FunctionCall{
+				Name:      item.Name,
+				Arguments: item.Arguments,
+			},
+		})
+	}
+	return toolCalls
 }
 
 func buildToolCallsFromResponsesItems(items []ResponsesItem) []model.ToolCall {
