@@ -28,12 +28,9 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 		return nil, fmt.Errorf("request is nil")
 	}
 
-	// Convert to Responses API request format
-	responsesReq := ConvertToResponsesRequest(request)
-
-	body, err := json.Marshal(responsesReq)
+	body, err := marshalResponsesRequest(request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal responses api request: %w", err)
+		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "", bytes.NewReader(body))
@@ -56,6 +53,52 @@ func (o *ResponseOutbound) TransformRequest(ctx context.Context, request *model.
 	req.Method = http.MethodPost
 
 	return req, nil
+}
+
+func marshalResponsesRequest(request *model.InternalLLMRequest) ([]byte, error) {
+	if preservedBody, ok, err := tryPreserveRawResponsesRequest(request); err != nil {
+		return nil, err
+	} else if ok {
+		return preservedBody, nil
+	}
+
+	// Convert to Responses API request format
+	responsesReq := ConvertToResponsesRequest(request)
+
+	body, err := json.Marshal(responsesReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal responses api request: %w", err)
+	}
+
+	return body, nil
+}
+
+// tryPreserveRawResponsesRequest keeps the original Responses payload shape when the
+// request entered Octopus as OpenAI Responses and is being forwarded to a
+// Responses-compatible upstream. This avoids losing fields that the internal
+// chat-shaped model does not round-trip, which is important for upstream cache hits.
+func tryPreserveRawResponsesRequest(request *model.InternalLLMRequest) ([]byte, bool, error) {
+	if request == nil || request.RawAPIFormat != model.APIFormatOpenAIResponse || len(request.RawRequest) == 0 {
+		return nil, false, nil
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(request.RawRequest, &raw); err != nil {
+		return nil, false, fmt.Errorf("failed to decode raw responses api request: %w", err)
+	}
+
+	modelValue, err := json.Marshal(request.Model)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal response request model: %w", err)
+	}
+	raw["model"] = modelValue
+
+	body, err := json.Marshal(raw)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal preserved responses api request: %w", err)
+	}
+
+	return body, true, nil
 }
 
 func (o *ResponseOutbound) TransformResponse(ctx context.Context, response *http.Response) (*model.InternalLLMResponse, error) {
