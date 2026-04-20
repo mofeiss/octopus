@@ -97,3 +97,70 @@ func TestMarshalResponsesRequestFallsBackToTransformedBody(t *testing.T) {
 func strPtr(s string) *string {
 	return &s
 }
+
+func TestResponseOutboundTransformStreamSupportsFunctionCallDoneEvents(t *testing.T) {
+	outbound := &ResponseOutbound{}
+
+	addedEvent := []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_123","name":"exec_command"}}`)
+	addedResp, err := outbound.TransformStream(nil, addedEvent)
+	if err != nil {
+		t.Fatalf("TransformStream added event error: %v", err)
+	}
+	if addedResp == nil || len(addedResp.Choices) != 1 || len(addedResp.Choices[0].Delta.ToolCalls) != 1 {
+		t.Fatalf("expected tool call from output_item.added, got %#v", addedResp)
+	}
+	if addedResp.Choices[0].Delta.ToolCalls[0].Function.Name != "exec_command" {
+		t.Fatalf("expected function name from added event, got %#v", addedResp.Choices[0].Delta.ToolCalls[0])
+	}
+
+	doneArgsEvent := []byte(`{"type":"response.function_call_arguments.done","output_index":0,"call_id":"call_123","arguments":"{\"cmd\":\"pwd\"}"}`)
+	doneArgsResp, err := outbound.TransformStream(nil, doneArgsEvent)
+	if err != nil {
+		t.Fatalf("TransformStream done args event error: %v", err)
+	}
+	if doneArgsResp == nil || len(doneArgsResp.Choices) != 1 || len(doneArgsResp.Choices[0].Delta.ToolCalls) != 1 {
+		t.Fatalf("expected tool call from function_call_arguments.done, got %#v", doneArgsResp)
+	}
+	if doneArgsResp.Choices[0].Delta.ToolCalls[0].Function.Arguments != `{"cmd":"pwd"}` {
+		t.Fatalf("expected arguments from done event, got %#v", doneArgsResp.Choices[0].Delta.ToolCalls[0])
+	}
+
+	outputDoneEvent := []byte(`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_123","name":"exec_command","arguments":"{\"cmd\":\"pwd\"}"}}`)
+	outputDoneResp, err := outbound.TransformStream(nil, outputDoneEvent)
+	if err != nil {
+		t.Fatalf("TransformStream output item done error: %v", err)
+	}
+	if outputDoneResp == nil || len(outputDoneResp.Choices) != 1 || len(outputDoneResp.Choices[0].Delta.ToolCalls) != 1 {
+		t.Fatalf("expected tool call from output_item.done, got %#v", outputDoneResp)
+	}
+	toolCall := outputDoneResp.Choices[0].Delta.ToolCalls[0]
+	if toolCall.Function.Name != "exec_command" || toolCall.Function.Arguments != `{"cmd":"pwd"}` {
+		t.Fatalf("expected complete tool call from output_item.done, got %#v", toolCall)
+	}
+}
+
+func TestResponseOutboundTransformStreamSupportsCompletedEventToolCalls(t *testing.T) {
+	outbound := &ResponseOutbound{}
+
+	event := []byte(`{"type":"response.completed","response":{"id":"resp_123","model":"gpt-5","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"我来处理。"}]},{"type":"function_call","call_id":"call_abc","name":"exec_command","arguments":"{\"cmd\":\"pwd\"}"}]}}`)
+	resp, err := outbound.TransformStream(nil, event)
+	if err != nil {
+		t.Fatalf("TransformStream completed event error: %v", err)
+	}
+	if resp == nil || len(resp.Choices) != 1 {
+		t.Fatalf("expected one choice, got %#v", resp)
+	}
+	if resp.Choices[0].FinishReason == nil || *resp.Choices[0].FinishReason != "stop" {
+		t.Fatalf("expected stop finish reason, got %#v", resp.Choices[0].FinishReason)
+	}
+	if resp.Choices[0].Delta == nil || len(resp.Choices[0].Delta.ToolCalls) != 1 {
+		t.Fatalf("expected tool call on completed event, got %#v", resp.Choices[0].Delta)
+	}
+	toolCall := resp.Choices[0].Delta.ToolCalls[0]
+	if toolCall.ID != "call_abc" || toolCall.Function.Name != "exec_command" || toolCall.Function.Arguments != `{"cmd":"pwd"}` {
+		t.Fatalf("unexpected tool call from completed event: %#v", toolCall)
+	}
+	if resp.ID != "resp_123" || resp.Model != "gpt-5" {
+		t.Fatalf("expected response metadata to propagate, got id=%q model=%q", resp.ID, resp.Model)
+	}
+}

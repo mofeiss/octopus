@@ -168,6 +168,15 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 		Created: 0,
 	}
 
+	if streamEvent.Item != nil {
+		if streamEvent.Item.ID != "" {
+			o.streamID = lo.Ternary(o.streamID != "", o.streamID, streamEvent.Item.ID)
+		}
+		if streamEvent.Item.CallID != "" {
+			resp.ID = o.streamID
+		}
+	}
+
 	switch streamEvent.Type {
 	case "response.created", "response.in_progress":
 		if streamEvent.Response != nil {
@@ -243,6 +252,55 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 			return nil, nil
 		}
 
+	case "response.function_call_arguments.done":
+		if streamEvent.ItemID == nil && streamEvent.CallID == "" && streamEvent.Arguments == "" {
+			return nil, nil
+		}
+
+		resp.Choices = []model.Choice{
+			{
+				Index: 0,
+				Delta: &model.Message{
+					Role: "assistant",
+					ToolCalls: []model.ToolCall{
+						{
+							Index: streamEvent.OutputIndex,
+							ID:    streamEvent.CallID,
+							Type:  "function",
+							Function: model.FunctionCall{
+								Arguments: streamEvent.Arguments,
+							},
+						},
+					},
+				},
+			},
+		}
+
+	case "response.output_item.done":
+		if streamEvent.Item == nil || streamEvent.Item.Type != "function_call" {
+			return nil, nil
+		}
+
+		resp.Choices = []model.Choice{
+			{
+				Index: 0,
+				Delta: &model.Message{
+					Role: "assistant",
+					ToolCalls: []model.ToolCall{
+						{
+							Index: streamEvent.OutputIndex,
+							ID:    streamEvent.Item.CallID,
+							Type:  "function",
+							Function: model.FunctionCall{
+								Name:      streamEvent.Item.Name,
+								Arguments: streamEvent.Item.Arguments,
+							},
+						},
+					},
+				},
+			},
+		}
+
 	case "response.reasoning_summary_text.delta":
 		resp.Choices = []model.Choice{
 			{
@@ -256,6 +314,24 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 
 	case "response.completed":
 		if streamEvent.Response != nil {
+			o.streamID = lo.Ternary(streamEvent.Response.ID != "", streamEvent.Response.ID, o.streamID)
+			o.streamModel = lo.Ternary(streamEvent.Response.Model != "", streamEvent.Response.Model, o.streamModel)
+			resp.ID = o.streamID
+			resp.Model = o.streamModel
+
+			if len(streamEvent.Response.Output) > 0 {
+				toolCalls := buildToolCallsFromResponsesItems(streamEvent.Response.Output)
+				if len(toolCalls) > 0 {
+					resp.Choices = []model.Choice{{
+						Index: 0,
+						Delta: &model.Message{
+							Role:      "assistant",
+							ToolCalls: toolCalls,
+						},
+					}}
+				}
+			}
+
 			var finishReason *string
 			if streamEvent.Response.Status != nil {
 				switch *streamEvent.Response.Status {
@@ -267,12 +343,10 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 					finishReason = lo.ToPtr("error")
 				}
 			}
-			resp.Choices = []model.Choice{
-				{
-					Index:        0,
-					FinishReason: finishReason,
-				},
+			if len(resp.Choices) == 0 {
+				resp.Choices = []model.Choice{{Index: 0}}
 			}
+			resp.Choices[0].FinishReason = finishReason
 			if streamEvent.Response.Usage != nil {
 				resp.Usage = convertResponsesUsage(streamEvent.Response.Usage)
 			}
@@ -292,6 +366,25 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 	}
 
 	return resp, nil
+}
+
+func buildToolCallsFromResponsesItems(items []ResponsesItem) []model.ToolCall {
+	toolCalls := make([]model.ToolCall, 0)
+	for idx, item := range items {
+		if item.Type != "function_call" {
+			continue
+		}
+		toolCalls = append(toolCalls, model.ToolCall{
+			Index: idx,
+			ID:    item.CallID,
+			Type:  "function",
+			Function: model.FunctionCall{
+				Name:      item.Name,
+				Arguments: item.Arguments,
+			},
+		})
+	}
+	return toolCalls
 }
 
 // ResponsesRequest represents the OpenAI Responses API request format.
