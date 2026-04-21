@@ -68,11 +68,14 @@ type relayRequest struct {
 type relayAttempt struct {
 	*relayRequest // 嵌入请求级上下文
 
-	outAdapter           model.Outbound
-	resolvedType         outbound.OutboundType
-	channel              *dbmodel.Channel
-	usedKey              dbmodel.ChannelKey
-	firstTokenTimeOutSec int
+	outAdapter   model.Outbound
+	resolvedType outbound.OutboundType
+	channel      *dbmodel.Channel
+	usedKey      dbmodel.ChannelKey
+	// [fork] Same-protocol passthrough can parse usage/logging best-effort without
+	// going through the client-visible transform chain.
+	passthroughInternalResponse *model.InternalLLMResponse
+	firstTokenTimeOutSec        int
 	// [fork] per-attempt outbound request snapshot for relay log detail
 	outboundRequestContent  string
 	outboundRequestProtocol string

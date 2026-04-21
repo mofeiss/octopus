@@ -268,14 +268,21 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 // forward 转发请求到上游服务
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
+	passthrough := shouldPassthroughSameProtocol(ra.inboundType(), ra.resolvedType)
 
 	// 构建出站请求
-	outboundRequest, err := ra.outAdapter.TransformRequest(
-		ctx,
-		ra.internalRequest,
-		ra.channel.GetBaseUrl(),
-		ra.usedKey.ChannelKey,
-	)
+	var outboundRequest *http.Request
+	var err error
+	if passthrough {
+		outboundRequest, err = buildPassthroughRequest(ctx, ra.internalRequest, ra.inboundType(), ra.channel.GetBaseUrl(), ra.usedKey.ChannelKey)
+	} else {
+		outboundRequest, err = ra.outAdapter.TransformRequest(
+			ctx,
+			ra.internalRequest,
+			ra.channel.GetBaseUrl(),
+			ra.usedKey.ChannelKey,
+		)
+	}
 	if err != nil {
 		log.Warnf("failed to create request: %v", err)
 		return 0, fmt.Errorf("failed to create request: %w", err)
@@ -304,15 +311,40 @@ func (ra *relayAttempt) forward() (int, error) {
 
 	// 处理响应
 	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream {
-		if err := ra.handleStreamResponse(ctx, response); err != nil {
+		if passthrough {
+			err = ra.handlePassthroughStreamResponse(ctx, response)
+		} else {
+			err = ra.handleStreamResponse(ctx, response)
+		}
+		if err != nil {
 			return 0, err
 		}
 		return response.StatusCode, nil
 	}
-	if err := ra.handleResponse(ctx, response); err != nil {
+	if passthrough {
+		err = ra.handlePassthroughResponse(ctx, response)
+	} else {
+		err = ra.handleResponse(ctx, response)
+	}
+	if err != nil {
 		return 0, err
 	}
 	return response.StatusCode, nil
+}
+
+func (ra *relayAttempt) inboundType() inbound.InboundType {
+	switch ra.internalRequest.RawAPIFormat {
+	case model.APIFormatOpenAIChatCompletion:
+		return inbound.InboundTypeOpenAIChat
+	case model.APIFormatOpenAIResponse:
+		return inbound.InboundTypeOpenAIResponse
+	case model.APIFormatAnthropicMessage:
+		return inbound.InboundTypeAnthropic
+	case model.APIFormatOpenAIEmbedding:
+		return inbound.InboundTypeOpenAIEmbedding
+	default:
+		return inbound.InboundTypeOpenAIChat
+	}
 }
 
 // copyHeaders 复制请求头，过滤 hop-by-hop 头
@@ -477,6 +509,11 @@ func (ra *relayAttempt) handleResponse(ctx context.Context, response *http.Respo
 
 // collectResponse 收集响应信息
 func (ra *relayAttempt) collectResponse() {
+	if ra.passthroughInternalResponse != nil {
+		ra.metrics.SetInternalResponse(ra.passthroughInternalResponse, ra.internalRequest.Model)
+		return
+	}
+
 	internalResponse, err := ra.inAdapter.GetInternalResponse(ra.c.Request.Context())
 	if err != nil || internalResponse == nil {
 		return
