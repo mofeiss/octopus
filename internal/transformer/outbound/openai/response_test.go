@@ -94,6 +94,80 @@ func TestMarshalResponsesRequestFallsBackToTransformedBody(t *testing.T) {
 	}
 }
 
+func TestMarshalResponsesRequestUsesCompatForRawChatCompletions(t *testing.T) {
+	stream := true
+	raw := []byte(`{"model":"gpt-4.1","messages":[{"role":"system","content":"你是助手"},{"role":"user","content":"hello"}],"stream":false}`)
+
+	body, err := marshalResponsesRequest(&model.InternalLLMRequest{
+		Model:        "gpt-5-mini",
+		Stream:       &stream,
+		RawAPIFormat: model.APIFormatOpenAIChatCompletion,
+		RawRequest:   raw,
+	})
+	if err != nil {
+		t.Fatalf("marshalResponsesRequest returned error: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("failed to decode compat body: %v", err)
+	}
+
+	if got["model"] != "gpt-5-mini" {
+		t.Fatalf("model should be rewritten by compat path, got %v", got["model"])
+	}
+	if got["stream"] != true {
+		t.Fatalf("stream should follow internal request, got %v", got["stream"])
+	}
+
+	input, ok := got["input"].([]any)
+	if !ok || len(input) != 2 {
+		t.Fatalf("expected compat input array with 2 items, got %T len=%d", got["input"], len(input))
+	}
+	first, _ := input[0].(map[string]any)
+	second, _ := input[1].(map[string]any)
+	if first["role"] != "system" || second["role"] != "user" {
+		t.Fatalf("unexpected compat roles: %#v %#v", first["role"], second["role"])
+	}
+}
+
+func TestMarshalResponsesRequestUsesCompatForRawAnthropic(t *testing.T) {
+	stream := true
+	raw := []byte(`{"model":"claude-3-7-sonnet","system":"你是助手","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+
+	body, err := marshalResponsesRequest(&model.InternalLLMRequest{
+		Model:        "gpt-5-mini",
+		Stream:       &stream,
+		RawAPIFormat: model.APIFormatAnthropicMessage,
+		RawRequest:   raw,
+	})
+	if err != nil {
+		t.Fatalf("marshalResponsesRequest returned error: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("failed to decode compat body: %v", err)
+	}
+
+	if got["model"] != "gpt-5-mini" {
+		t.Fatalf("model should be rewritten by compat path, got %v", got["model"])
+	}
+	if got["stream"] != true {
+		t.Fatalf("stream should follow internal request, got %v", got["stream"])
+	}
+
+	input, ok := got["input"].([]any)
+	if !ok || len(input) != 2 {
+		t.Fatalf("expected compat input array with 2 items, got %T len=%d", got["input"], len(input))
+	}
+	first, _ := input[0].(map[string]any)
+	second, _ := input[1].(map[string]any)
+	if first["role"] != "system" || second["role"] != "user" {
+		t.Fatalf("unexpected compat roles: %#v %#v", first["role"], second["role"])
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }
@@ -220,8 +294,8 @@ func TestResponseOutboundTransformStreamSkipsDuplicateToolCallsAfterArgumentDelt
 	if completedResp.Choices[0].Delta != nil && len(completedResp.Choices[0].Delta.ToolCalls) > 0 {
 		t.Fatalf("expected completed event not to repeat tool call after delta, got %#v", completedResp.Choices[0].Delta)
 	}
-	if completedResp.Choices[0].FinishReason == nil || *completedResp.Choices[0].FinishReason != "stop" {
-		t.Fatalf("expected completed event without repeated tool call to keep stop finish reason, got %#v", completedResp.Choices[0].FinishReason)
+	if completedResp.Choices[0].FinishReason == nil || *completedResp.Choices[0].FinishReason != "tool_calls" {
+		t.Fatalf("expected completed event to preserve tool_calls finish reason, got %#v", completedResp.Choices[0].FinishReason)
 	}
 }
 

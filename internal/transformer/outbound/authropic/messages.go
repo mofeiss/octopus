@@ -14,6 +14,7 @@ import (
 
 	anthropicModel "github.com/bestruirui/octopus/internal/transformer/inbound/anthropic"
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/transformer/protocolcompat"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 )
 
@@ -25,6 +26,11 @@ type MessageOutbound struct {
 	toolIndex   int
 	toolCalls   map[int]*model.ToolCall
 	initialized bool
+
+	// [fork] Reuse the sub2api Anthropic -> Responses -> Chat stream pipeline to
+	// keep cross-protocol tool-call parsing aligned with the upstream gateway.
+	anthropicResponsesState *protocolcompat.AnthropicEventToResponsesState
+	responsesChatState      *protocolcompat.ResponsesEventToChatState
 }
 
 func (o *MessageOutbound) TransformRequest(ctx context.Context, request *model.InternalLLMRequest, baseUrl, key string) (*http.Request, error) {
@@ -32,10 +38,14 @@ func (o *MessageOutbound) TransformRequest(ctx context.Context, request *model.I
 		return nil, fmt.Errorf("request is nil")
 	}
 
-	// Convert to Anthropic request format
-	anthropicReq := convertToAnthropicRequest(request)
+	requestBody := any(convertToAnthropicRequest(request))
+	if compatReq, ok, err := buildCompatAnthropicRequest(request); err != nil {
+		return nil, err
+	} else if ok {
+		requestBody = compatReq
+	}
 
-	body, err := json.Marshal(anthropicReq)
+	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal anthropic request: %w", err)
 	}
@@ -103,7 +113,30 @@ func (o *MessageOutbound) TransformResponse(ctx context.Context, response *http.
 
 	var anthropicResp anthropicModel.Message
 	if err := json.Unmarshal(body, &anthropicResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal anthropic response: %w", err)
+		var compatResp protocolcompat.AnthropicResponse
+		if compatErr := json.Unmarshal(body, &compatResp); compatErr != nil {
+			return nil, fmt.Errorf("failed to unmarshal anthropic response: %w", err)
+		}
+
+		responsesResp := protocolcompat.AnthropicToResponsesResponse(&compatResp)
+		chatResp := protocolcompat.ResponsesToChatCompletions(responsesResp, compatResp.Model)
+		internalResp, bridgeErr := protocolcompat.ChatResponseToInternal(chatResp)
+		if bridgeErr != nil {
+			return nil, fmt.Errorf("failed to bridge compat anthropic response: %w", bridgeErr)
+		}
+		internalResp.Usage = convertCompatAnthropicUsage(&compatResp.Usage)
+		return internalResp, nil
+	}
+
+	// [fork] Prefer the sub2api-compatible bridge first, while keeping the legacy
+	// converter as fallback for provider-specific JSON differences.
+	compatResp := convertLegacyAnthropicResponseToCompat(&anthropicResp)
+	responsesResp := protocolcompat.AnthropicToResponsesResponse(compatResp)
+	chatResp := protocolcompat.ResponsesToChatCompletions(responsesResp, compatResp.Model)
+	internalResp, bridgeErr := protocolcompat.ChatResponseToInternal(chatResp)
+	if bridgeErr == nil {
+		internalResp.Usage = convertCompatAnthropicUsage(&compatResp.Usage)
+		return internalResp, nil
 	}
 
 	// Convert to internal response
@@ -128,158 +161,46 @@ func (o *MessageOutbound) TransformStream(ctx context.Context, eventData []byte)
 		o.toolIndex = -1
 		o.initialized = true
 	}
+	if o.anthropicResponsesState == nil {
+		o.anthropicResponsesState = protocolcompat.NewAnthropicEventToResponsesState()
+	}
+	if o.responsesChatState == nil {
+		o.responsesChatState = protocolcompat.NewResponsesEventToChatState()
+		o.responsesChatState.IncludeUsage = true
+	}
 
-	// Parse the streaming event
-	var streamEvent anthropicModel.StreamEvent
+	// [fork] Parse Anthropic SSE with the sub2api-compatible state machine first.
+	var streamEvent protocolcompat.AnthropicStreamEvent
 	if err := json.Unmarshal(eventData, &streamEvent); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream event: %w", err)
 	}
 
-	resp := &model.InternalLLMResponse{
-		ID:      o.streamID,
-		Model:   o.streamModel,
-		Object:  "chat.completion.chunk",
-		Created: 0,
+	o.trackCompatAnthropicUsage(&streamEvent)
+
+	responsesEvents := protocolcompat.AnthropicEventToResponsesEvents(&streamEvent, o.anthropicResponsesState)
+	compatChunks := make([]protocolcompat.ChatCompletionsChunk, 0, len(responsesEvents))
+	for i := range responsesEvents {
+		compatChunks = append(compatChunks, protocolcompat.ResponsesEventToChatChunks(&responsesEvents[i], o.responsesChatState)...)
 	}
 
-	switch streamEvent.Type {
-	case "message_start":
-		if streamEvent.Message != nil {
-			o.streamID = streamEvent.Message.ID
-			o.streamModel = streamEvent.Message.Model
-			resp.ID = o.streamID
-			resp.Model = o.streamModel
-
-			if streamEvent.Message.Usage != nil &&
-				(streamEvent.Message.Usage.InputTokens > 0 ||
-					streamEvent.Message.Usage.OutputTokens > 0 ||
-					streamEvent.Message.Usage.CacheReadInputTokens > 0 ||
-					streamEvent.Message.Usage.CacheCreationInputTokens > 0) {
-				o.streamUsage = convertAnthropicUsage(streamEvent.Message.Usage)
-				resp.Usage = o.streamUsage
-			}
-		}
-
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-				},
-			},
-		}
-
-	case "content_block_start":
-		if streamEvent.ContentBlock != nil {
-			switch streamEvent.ContentBlock.Type {
-			case "tool_use":
-				o.toolIndex++
-				toolCall := model.ToolCall{
-					Index: o.toolIndex,
-					ID:    streamEvent.ContentBlock.ID,
-					Type:  "function",
-					Function: model.FunctionCall{
-						Name:      lo.FromPtr(streamEvent.ContentBlock.Name),
-						Arguments: "",
-					},
-				}
-				o.toolCalls[o.toolIndex] = &toolCall
-
-				resp.Choices = []model.Choice{
-					{
-						Index: 0,
-						Delta: &model.Message{
-							Role:      "assistant",
-							ToolCalls: []model.ToolCall{toolCall},
-						},
-					},
-				}
-			case "text", "thinking":
-				// These are handled in content_block_delta
-				return nil, nil
-			default:
-				return nil, nil
-			}
-		}
-
-	case "content_block_delta":
-		if streamEvent.Delta != nil && streamEvent.Delta.Type != nil {
-			choice := model.Choice{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-				},
-			}
-
-			switch *streamEvent.Delta.Type {
-			case "text_delta":
-				if streamEvent.Delta.Text != nil {
-					choice.Delta.Content = model.MessageContent{
-						Content: streamEvent.Delta.Text,
-					}
-				}
-			case "input_json_delta":
-				if streamEvent.Delta.PartialJSON != nil && o.toolIndex >= 0 {
-					choice.Delta.ToolCalls = []model.ToolCall{
-						{
-							Index: o.toolIndex,
-							ID:    o.toolCalls[o.toolIndex].ID,
-							Type:  "function",
-							Function: model.FunctionCall{
-								Arguments: *streamEvent.Delta.PartialJSON,
-							},
-						},
-					}
-				}
-			case "thinking_delta":
-				if streamEvent.Delta.Thinking != nil {
-					choice.Delta.ReasoningContent = streamEvent.Delta.Thinking
-				}
-			case "signature_delta":
-				if streamEvent.Delta.Signature != nil {
-					choice.Delta.ReasoningSignature = streamEvent.Delta.Signature
-				}
-			default:
-				return nil, nil
-			}
-
-			resp.Choices = []model.Choice{choice}
-		}
-
-	case "message_delta":
-		if streamEvent.Usage != nil {
-			usage := convertAnthropicUsage(streamEvent.Usage)
-			if o.streamUsage != nil {
-				usage.PromptTokens = o.streamUsage.PromptTokens
-				usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-			}
-			o.streamUsage = usage
-		}
-
-		if streamEvent.Delta != nil && streamEvent.Delta.StopReason != nil {
-			finishReason := convertStopReason(streamEvent.Delta.StopReason)
-			resp.Choices = []model.Choice{
-				{
-					Index:        0,
-					FinishReason: finishReason,
-				},
-			}
-		}
-
-	case "message_stop":
-		resp.Choices = []model.Choice{}
-		if o.streamUsage != nil {
-			resp.Usage = o.streamUsage
-		}
-
-	case "content_block_stop", "ping":
-		return nil, nil
-
-	default:
+	resp := mergeCompatAnthropicChatChunks(compatChunks)
+	if resp == nil {
 		return nil, nil
 	}
 
-	return resp, nil
+	internalResp, err := protocolcompat.ChatChunkToInternal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bridge compat anthropic stream chunk: %w", err)
+	}
+
+	if streamEvent.Type == "message_start" && o.streamUsage != nil {
+		internalResp.Usage = o.streamUsage
+	}
+	if streamEvent.Type == "message_stop" && o.streamUsage != nil {
+		internalResp.Usage = o.streamUsage
+	}
+
+	return internalResp, nil
 }
 
 // convertToAnthropicRequest converts internal LLM request to Anthropic format
@@ -877,4 +798,234 @@ func convertAnthropicUsage(usage *anthropicModel.Usage) *model.Usage {
 		}
 	}
 	return result
+}
+
+// [fork] Reuse the sub2api request conversion path when the inbound protocol is
+// OpenAI Responses or OpenAI Chat and the selected upstream is Anthropic.
+func buildCompatAnthropicRequest(request *model.InternalLLMRequest) (*protocolcompat.AnthropicRequest, bool, error) {
+	if request == nil || len(request.RawRequest) == 0 {
+		return nil, false, nil
+	}
+
+	switch request.RawAPIFormat {
+	case model.APIFormatOpenAIResponse:
+		var raw protocolcompat.ResponsesRequest
+		if err := json.Unmarshal(request.RawRequest, &raw); err != nil {
+			return nil, false, fmt.Errorf("failed to decode raw responses request: %w", err)
+		}
+
+		raw.Model = request.Model
+		raw.Stream = request.Stream != nil && *request.Stream
+
+		compatReq, err := protocolcompat.ResponsesToAnthropicRequest(&raw)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert raw responses request to anthropic request: %w", err)
+		}
+		compatReq.Model = request.Model
+		compatReq.Stream = request.Stream != nil && *request.Stream
+		return compatReq, true, nil
+	case model.APIFormatOpenAIChatCompletion:
+		var raw protocolcompat.ChatCompletionsRequest
+		if err := json.Unmarshal(request.RawRequest, &raw); err != nil {
+			return nil, false, fmt.Errorf("failed to decode raw chat completions request: %w", err)
+		}
+
+		responsesReq, err := protocolcompat.ChatCompletionsToResponses(&raw)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert raw chat completions request to responses request: %w", err)
+		}
+		responsesReq.Model = request.Model
+		responsesReq.Stream = request.Stream != nil && *request.Stream
+
+		compatReq, err := protocolcompat.ResponsesToAnthropicRequest(responsesReq)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert compat responses request to anthropic request: %w", err)
+		}
+		compatReq.Model = request.Model
+		compatReq.Stream = request.Stream != nil && *request.Stream
+		return compatReq, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+func convertCompatAnthropicUsage(usage *protocolcompat.AnthropicUsage) *model.Usage {
+	if usage == nil {
+		return nil
+	}
+
+	result := &model.Usage{
+		PromptTokens:             int64(usage.InputTokens),
+		CompletionTokens:         int64(usage.OutputTokens),
+		TotalTokens:              int64(usage.InputTokens + usage.OutputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens),
+		CacheCreationInputTokens: int64(usage.CacheCreationInputTokens),
+		AnthropicUsage:           true,
+	}
+	if usage.CacheReadInputTokens > 0 {
+		result.PromptTokensDetails = &model.PromptTokensDetails{
+			CachedTokens: int64(usage.CacheReadInputTokens),
+		}
+	}
+	return result
+}
+
+func (o *MessageOutbound) trackCompatAnthropicUsage(event *protocolcompat.AnthropicStreamEvent) {
+	if event == nil {
+		return
+	}
+
+	switch event.Type {
+	case "message_start":
+		if event.Message == nil {
+			return
+		}
+		o.streamID = event.Message.ID
+		o.streamModel = event.Message.Model
+		if usage := convertCompatAnthropicUsage(&event.Message.Usage); usage != nil {
+			o.streamUsage = usage
+		}
+	case "message_delta":
+		if event.Usage == nil {
+			return
+		}
+		usage := convertCompatAnthropicUsage(event.Usage)
+		if o.streamUsage != nil {
+			usage.PromptTokens = o.streamUsage.PromptTokens
+			usage.CacheCreationInputTokens = o.streamUsage.CacheCreationInputTokens
+			if usage.PromptTokensDetails == nil {
+				usage.PromptTokensDetails = o.streamUsage.PromptTokensDetails
+			}
+			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens + usage.CacheCreationInputTokens
+			if usage.PromptTokensDetails != nil {
+				usage.TotalTokens += usage.PromptTokensDetails.CachedTokens
+			}
+		}
+		o.streamUsage = usage
+	}
+}
+
+func mergeCompatAnthropicChatChunks(chunks []protocolcompat.ChatCompletionsChunk) *protocolcompat.ChatCompletionsChunk {
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	merged := &protocolcompat.ChatCompletionsChunk{}
+	for _, chunk := range chunks {
+		if merged.ID == "" {
+			merged.ID = chunk.ID
+		}
+		if merged.Object == "" {
+			merged.Object = chunk.Object
+		}
+		if merged.Created == 0 {
+			merged.Created = chunk.Created
+		}
+		if merged.Model == "" {
+			merged.Model = chunk.Model
+		}
+		if merged.SystemFingerprint == "" {
+			merged.SystemFingerprint = chunk.SystemFingerprint
+		}
+		if merged.ServiceTier == "" {
+			merged.ServiceTier = chunk.ServiceTier
+		}
+		if chunk.Usage != nil {
+			merged.Usage = chunk.Usage
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		if len(merged.Choices) == 0 {
+			merged.Choices = append(merged.Choices, chunk.Choices[0])
+			continue
+		}
+
+		dst := &merged.Choices[0]
+		src := chunk.Choices[0]
+		if dst.Delta.Role == "" {
+			dst.Delta.Role = src.Delta.Role
+		}
+		if src.Delta.Content != nil && (dst.Delta.Content == nil || *src.Delta.Content != "") {
+			dst.Delta.Content = src.Delta.Content
+		}
+		if src.Delta.ReasoningContent != nil {
+			dst.Delta.ReasoningContent = src.Delta.ReasoningContent
+		}
+		if len(src.Delta.ToolCalls) > 0 {
+			dst.Delta.ToolCalls = append(dst.Delta.ToolCalls, src.Delta.ToolCalls...)
+		}
+		if src.FinishReason != nil {
+			dst.FinishReason = src.FinishReason
+		}
+	}
+
+	if merged.Object == "" {
+		merged.Object = "chat.completion.chunk"
+	}
+
+	return merged
+}
+
+func convertLegacyAnthropicResponseToCompat(resp *anthropicModel.Message) *protocolcompat.AnthropicResponse {
+	if resp == nil {
+		return &protocolcompat.AnthropicResponse{}
+	}
+
+	compatResp := &protocolcompat.AnthropicResponse{
+		ID:    resp.ID,
+		Type:  resp.Type,
+		Role:  resp.Role,
+		Model: resp.Model,
+		Usage: protocolcompat.AnthropicUsage{},
+	}
+	if resp.StopReason != nil {
+		compatResp.StopReason = *resp.StopReason
+	}
+	if resp.StopSequence != nil {
+		compatResp.StopSequence = resp.StopSequence
+	}
+	if resp.Usage != nil {
+		compatResp.Usage = protocolcompat.AnthropicUsage{
+			InputTokens:              int(resp.Usage.InputTokens),
+			OutputTokens:             int(resp.Usage.OutputTokens),
+			CacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
+			CacheReadInputTokens:     int(resp.Usage.CacheReadInputTokens),
+		}
+	}
+
+	for _, block := range resp.Content {
+		compatBlock := protocolcompat.AnthropicContentBlock{
+			Type:      block.Type,
+			Text:      lo.FromPtr(block.Text),
+			Thinking:  lo.FromPtr(block.Thinking),
+			Signature: lo.FromPtr(block.Signature),
+			ID:        block.ID,
+			Name:      lo.FromPtr(block.Name),
+		}
+		if block.Source != nil {
+			compatBlock.Source = &protocolcompat.AnthropicImageSource{
+				Type:      block.Source.Type,
+				MediaType: block.Source.MediaType,
+				Data:      block.Source.Data,
+			}
+		}
+		if len(block.Input) > 0 {
+			compatBlock.Input = append(json.RawMessage(nil), block.Input...)
+		}
+		if block.ToolUseID != nil {
+			compatBlock.ToolUseID = *block.ToolUseID
+		}
+		if block.Content != nil {
+			contentJSON, err := json.Marshal(block.Content)
+			if err == nil {
+				compatBlock.Content = contentJSON
+			}
+		}
+		if block.IsError != nil {
+			compatBlock.IsError = *block.IsError
+		}
+		compatResp.Content = append(compatResp.Content, compatBlock)
+	}
+
+	return compatResp
 }

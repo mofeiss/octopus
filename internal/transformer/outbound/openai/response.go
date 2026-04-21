@@ -13,6 +13,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/transformer/protocolcompat"
 )
 
 // ResponseOutbound implements the Outbound interface for OpenAI Responses API.
@@ -26,6 +27,10 @@ type ResponseOutbound struct {
 	// tool invocation per call_id. Some Responses upstreams send arguments in
 	// deltas and then repeat the full JSON again in done/completed events.
 	toolCallState map[string]*responsesToolCallStreamState
+
+	// [fork] Use the sub2api-compatible Responses -> Chat stream state machine as
+	// the primary parser for cross-protocol relay paths.
+	responsesChatState *protocolcompat.ResponsesEventToChatState
 }
 
 type responsesToolCallStreamState struct {
@@ -71,6 +76,11 @@ func marshalResponsesRequest(request *model.InternalLLMRequest) ([]byte, error) 
 	} else if ok {
 		return preservedBody, nil
 	}
+	if compatBody, ok, err := tryMarshalCompatResponsesRequest(request); err != nil {
+		return nil, err
+	} else if ok {
+		return compatBody, nil
+	}
 
 	// Convert to Responses API request format
 	responsesReq := ConvertToResponsesRequest(request)
@@ -111,6 +121,60 @@ func tryPreserveRawResponsesRequest(request *model.InternalLLMRequest) ([]byte, 
 	return body, true, nil
 }
 
+// [fork] When the inbound protocol differs from the selected upstream
+// Responses-compatible channel, reuse the sub2api request conversion logic
+// instead of relying on Octopus' legacy ad-hoc transform.
+func tryMarshalCompatResponsesRequest(request *model.InternalLLMRequest) ([]byte, bool, error) {
+	compatReq, ok, err := buildCompatResponsesRequest(request)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+
+	body, err := json.Marshal(compatReq)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to marshal compat responses request: %w", err)
+	}
+
+	return body, true, nil
+}
+
+func buildCompatResponsesRequest(request *model.InternalLLMRequest) (*protocolcompat.ResponsesRequest, bool, error) {
+	if request == nil || len(request.RawRequest) == 0 {
+		return nil, false, nil
+	}
+
+	switch request.RawAPIFormat {
+	case model.APIFormatOpenAIChatCompletion:
+		var raw protocolcompat.ChatCompletionsRequest
+		if err := json.Unmarshal(request.RawRequest, &raw); err != nil {
+			return nil, false, fmt.Errorf("failed to decode raw chat completions request: %w", err)
+		}
+
+		compatReq, err := protocolcompat.ChatCompletionsToResponses(&raw)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert raw chat completions request to responses request: %w", err)
+		}
+		compatReq.Model = request.Model
+		compatReq.Stream = request.Stream != nil && *request.Stream
+		return compatReq, true, nil
+	case model.APIFormatAnthropicMessage:
+		var raw protocolcompat.AnthropicRequest
+		if err := json.Unmarshal(request.RawRequest, &raw); err != nil {
+			return nil, false, fmt.Errorf("failed to decode raw anthropic request: %w", err)
+		}
+
+		compatReq, err := protocolcompat.AnthropicToResponses(&raw)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert raw anthropic request to responses request: %w", err)
+		}
+		compatReq.Model = request.Model
+		compatReq.Stream = request.Stream != nil && *request.Stream
+		return compatReq, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
 func (o *ResponseOutbound) TransformResponse(ctx context.Context, response *http.Response) (*model.InternalLLMResponse, error) {
 	if response == nil {
 		return nil, fmt.Errorf("response is nil")
@@ -141,7 +205,46 @@ func (o *ResponseOutbound) TransformResponse(ctx context.Context, response *http
 
 	var resp ResponsesResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal responses api response: %w", err)
+		var compatResp protocolcompat.ResponsesResponse
+		if compatErr := json.Unmarshal(body, &compatResp); compatErr != nil {
+			return nil, fmt.Errorf("failed to unmarshal responses api response: %w", err)
+		}
+
+		chatResp := protocolcompat.ResponsesToChatCompletions(&compatResp, compatResp.Model)
+		internalResp, bridgeErr := protocolcompat.ChatResponseToInternal(chatResp)
+		if bridgeErr != nil {
+			return nil, fmt.Errorf("failed to bridge compat responses api response: %w", bridgeErr)
+		}
+		return internalResp, nil
+	}
+
+	// [fork] Prefer the sub2api-compatible bridge first, but keep the legacy
+	// converter as a safe fallback for provider-specific shape drift.
+	compatResp := protocolcompat.ResponsesResponse{
+		ID:     resp.ID,
+		Object: resp.Object,
+		Model:  resp.Model,
+		Output: make([]protocolcompat.ResponsesOutput, 0, len(resp.Output)),
+	}
+	if resp.Status != nil {
+		compatResp.Status = *resp.Status
+	}
+	if resp.Error != nil {
+		compatResp.Error = &protocolcompat.ResponsesError{
+			Message: resp.Error.Message,
+		}
+	}
+	if resp.Usage != nil {
+		compatResp.Usage = convertLegacyResponsesUsageToCompat(resp.Usage)
+	}
+	for _, item := range resp.Output {
+		compatResp.Output = append(compatResp.Output, convertLegacyResponsesItemToCompat(item))
+	}
+
+	chatResp := protocolcompat.ResponsesToChatCompletions(&compatResp, compatResp.Model)
+	internalResp, bridgeErr := protocolcompat.ChatResponseToInternal(chatResp)
+	if bridgeErr == nil {
+		return internalResp, nil
 	}
 
 	// Convert to internal response
@@ -160,6 +263,15 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 		}, nil
 	}
 
+	var errCheck struct {
+		Error *model.ErrorDetail `json:"error"`
+	}
+	if err := json.Unmarshal(eventData, &errCheck); err == nil && errCheck.Error != nil {
+		return nil, &model.ResponseError{
+			Detail: *errCheck.Error,
+		}
+	}
+
 	// Initialize state if needed
 	if !o.initialized {
 		o.initialized = true
@@ -167,236 +279,54 @@ func (o *ResponseOutbound) TransformStream(ctx context.Context, eventData []byte
 	if o.toolCallState == nil {
 		o.toolCallState = make(map[string]*responsesToolCallStreamState)
 	}
+	if o.responsesChatState == nil {
+		o.responsesChatState = protocolcompat.NewResponsesEventToChatState()
+		o.responsesChatState.IncludeUsage = true
+	}
 
-	// Parse the streaming event
-	var streamEvent ResponsesStreamEvent
-	if err := json.Unmarshal(eventData, &streamEvent); err != nil {
+	// [fork] Parse the streaming event with the sub2api-compatible state machine
+	// first, then keep the legacy tool-call completion fallbacks for providers
+	// that only emit *.done / completed tool payloads.
+	var compatEvent protocolcompat.ResponsesStreamEvent
+	if err := json.Unmarshal(eventData, &compatEvent); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal stream event: %w", err)
 	}
 
-	resp := &model.InternalLLMResponse{
-		ID:      o.streamID,
-		Model:   o.streamModel,
-		Object:  "chat.completion.chunk",
-		Created: 0,
-	}
+	o.trackCompatResponsesToolState(&compatEvent)
 
-	if streamEvent.Item != nil {
-		if streamEvent.Item.ID != "" {
-			o.streamID = lo.Ternary(o.streamID != "", o.streamID, streamEvent.Item.ID)
-		}
-		if streamEvent.Item.CallID != "" {
-			resp.ID = o.streamID
+	compatChunks := protocolcompat.ResponsesEventToChatChunks(&compatEvent, o.responsesChatState)
+	resp := mergeCompatChatChunks(compatChunks)
+	var err error
+	var internalResp *model.InternalLLMResponse
+	if resp != nil {
+		internalResp, err = protocolcompat.ChatChunkToInternal(resp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to bridge compat responses stream chunk: %w", err)
 		}
 	}
 
-	switch streamEvent.Type {
-	case "response.created", "response.in_progress":
-		if streamEvent.Response != nil {
-			o.streamID = streamEvent.Response.ID
-			o.streamModel = streamEvent.Response.Model
-			resp.ID = o.streamID
-			resp.Model = o.streamModel
-		}
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-				},
-			},
-		}
-
-	case "response.output_text.delta":
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-					Content: model.MessageContent{
-						Content: lo.ToPtr(streamEvent.Delta),
-					},
-				},
-			},
-		}
-
-	case "response.function_call_arguments.delta":
-		state := o.getToolCallStreamState(streamEvent.CallID)
-		state.hasArgumentDelta = state.hasArgumentDelta || streamEvent.Delta != ""
-
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-					ToolCalls: []model.ToolCall{
-						{
-							Index: streamEvent.OutputIndex,
-							ID:    streamEvent.CallID,
-							Type:  "function",
-							Function: model.FunctionCall{
-								Name:      streamEvent.Name,
-								Arguments: streamEvent.Delta,
-							},
-						},
-					},
-				},
-			},
-		}
-
-	case "response.output_item.added":
-		if streamEvent.Item != nil && streamEvent.Item.Type == "function_call" {
-			o.getToolCallStreamState(streamEvent.Item.CallID)
-			resp.Choices = []model.Choice{
-				{
-					Index: 0,
-					Delta: &model.Message{
-						Role: "assistant",
-						ToolCalls: []model.ToolCall{
-							{
-								Index: streamEvent.OutputIndex,
-								ID:    streamEvent.Item.CallID,
-								Type:  "function",
-								Function: model.FunctionCall{
-									Name: streamEvent.Item.Name,
-								},
-							},
-						},
-					},
-				},
-			}
-		} else {
-			return nil, nil
-		}
-
-	case "response.function_call_arguments.done":
-		if streamEvent.ItemID == nil && streamEvent.CallID == "" && streamEvent.Arguments == "" {
-			return nil, nil
-		}
-
-		state := o.getToolCallStreamState(streamEvent.CallID)
-		if state.completedEmitted || state.hasArgumentDelta {
-			return nil, nil
-		}
-		state.completedEmitted = true
-
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-					ToolCalls: []model.ToolCall{
-						{
-							Index: streamEvent.OutputIndex,
-							ID:    streamEvent.CallID,
-							Type:  "function",
-							Function: model.FunctionCall{
-								Arguments: streamEvent.Arguments,
-							},
-						},
-					},
-				},
-			},
-		}
-
-	case "response.output_item.done":
-		if streamEvent.Item == nil || streamEvent.Item.Type != "function_call" {
-			return nil, nil
-		}
-
-		state := o.getToolCallStreamState(streamEvent.Item.CallID)
-		if state.completedEmitted || state.hasArgumentDelta {
-			return nil, nil
-		}
-		state.completedEmitted = true
-
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role: "assistant",
-					ToolCalls: []model.ToolCall{
-						{
-							Index: streamEvent.OutputIndex,
-							ID:    streamEvent.Item.CallID,
-							Type:  "function",
-							Function: model.FunctionCall{
-								Name:      streamEvent.Item.Name,
-								Arguments: streamEvent.Item.Arguments,
-							},
-						},
-					},
-				},
-			},
-		}
-
-	case "response.reasoning_summary_text.delta":
-		resp.Choices = []model.Choice{
-			{
-				Index: 0,
-				Delta: &model.Message{
-					Role:             "assistant",
-					ReasoningContent: lo.ToPtr(streamEvent.Delta),
-				},
-			},
-		}
-
-	case "response.completed":
-		if streamEvent.Response != nil {
-			o.streamID = lo.Ternary(streamEvent.Response.ID != "", streamEvent.Response.ID, o.streamID)
-			o.streamModel = lo.Ternary(streamEvent.Response.Model != "", streamEvent.Response.Model, o.streamModel)
-			resp.ID = o.streamID
-			resp.Model = o.streamModel
-
-			if len(streamEvent.Response.Output) > 0 {
-				toolCalls := o.buildPendingToolCallsFromResponsesItems(streamEvent.Response.Output)
-				if len(toolCalls) > 0 {
-					resp.Choices = []model.Choice{{
-						Index: 0,
-						Delta: &model.Message{
-							Role:      "assistant",
-							ToolCalls: toolCalls,
-						},
-					}}
-				}
-			}
-
-			var finishReason *string
-			if len(resp.Choices) > 0 && resp.Choices[0].Delta != nil && len(resp.Choices[0].Delta.ToolCalls) > 0 {
-				finishReason = lo.ToPtr("tool_calls")
-			} else if streamEvent.Response.Status != nil {
-				switch *streamEvent.Response.Status {
-				case "completed":
-					finishReason = lo.ToPtr("stop")
-				case "incomplete":
-					finishReason = lo.ToPtr("length")
-				case "failed":
-					finishReason = lo.ToPtr("error")
-				}
-			}
-			if len(resp.Choices) == 0 {
-				resp.Choices = []model.Choice{{Index: 0}}
-			}
-			resp.Choices[0].FinishReason = finishReason
-			if streamEvent.Response.Usage != nil {
-				resp.Usage = convertResponsesUsage(streamEvent.Response.Usage)
-			}
-		}
-
-	case "response.failed", "response.incomplete", "error":
-		resp.Choices = []model.Choice{
-			{
-				Index:        0,
-				FinishReason: lo.ToPtr("error"),
-			},
-		}
-
-	default:
-		// Skip unhandled events
+	internalResp = o.applyCompatResponsesStreamFallback(&compatEvent, internalResp)
+	if internalResp == nil {
 		return nil, nil
 	}
+	if compatEvent.Response != nil {
+		if compatEvent.Response.ID != "" {
+			internalResp.ID = compatEvent.Response.ID
+			o.streamID = compatEvent.Response.ID
+		}
+		if compatEvent.Response.Model != "" {
+			internalResp.Model = compatEvent.Response.Model
+			o.streamModel = compatEvent.Response.Model
+		}
+	}
 
-	return resp, nil
+	if compatEvent.Type == "response.failed" || compatEvent.Type == "error" ||
+		(compatEvent.Response != nil && compatEvent.Response.Status == "failed") {
+		ensureInternalResponseChoice(internalResp)
+		internalResp.Choices[0].FinishReason = lo.ToPtr("error")
+	}
+
+	return internalResp, nil
 }
 
 func (o *ResponseOutbound) getToolCallStreamState(callID string) *responsesToolCallStreamState {
@@ -433,6 +363,299 @@ func (o *ResponseOutbound) buildPendingToolCallsFromResponsesItems(items []Respo
 		})
 	}
 	return toolCalls
+}
+
+func (o *ResponseOutbound) trackCompatResponsesToolState(event *protocolcompat.ResponsesStreamEvent) {
+	if event == nil {
+		return
+	}
+
+	switch event.Type {
+	case "response.output_item.added":
+		if event.Item != nil && event.Item.Type == "function_call" {
+			o.getToolCallStreamState(event.Item.CallID)
+		}
+	case "response.function_call_arguments.delta":
+		if event.CallID == "" {
+			return
+		}
+		state := o.getToolCallStreamState(event.CallID)
+		state.hasArgumentDelta = state.hasArgumentDelta || event.Delta != ""
+	}
+}
+
+func (o *ResponseOutbound) applyCompatResponsesStreamFallback(event *protocolcompat.ResponsesStreamEvent, resp *model.InternalLLMResponse) *model.InternalLLMResponse {
+	if event == nil {
+		return resp
+	}
+
+	switch event.Type {
+	case "response.function_call_arguments.done":
+		if event.CallID == "" && event.Arguments == "" {
+			return resp
+		}
+
+		state := o.getToolCallStreamState(event.CallID)
+		if state.completedEmitted || state.hasArgumentDelta {
+			return resp
+		}
+		state.completedEmitted = true
+
+		resp = ensureCompatInternalChunk(resp, o.streamID, o.streamModel)
+		ensureInternalResponseChoice(resp)
+		resp.Choices[0].Delta = &model.Message{
+			Role: "assistant",
+			ToolCalls: []model.ToolCall{{
+				Index: event.OutputIndex,
+				ID:    event.CallID,
+				Type:  "function",
+				Function: model.FunctionCall{
+					Name:      event.Name,
+					Arguments: event.Arguments,
+				},
+			}},
+		}
+	case "response.output_item.done":
+		if event.Item == nil || event.Item.Type != "function_call" {
+			return resp
+		}
+
+		state := o.getToolCallStreamState(event.Item.CallID)
+		if state.completedEmitted || state.hasArgumentDelta {
+			return resp
+		}
+		state.completedEmitted = true
+
+		resp = ensureCompatInternalChunk(resp, o.streamID, o.streamModel)
+		ensureInternalResponseChoice(resp)
+		resp.Choices[0].Delta = &model.Message{
+			Role: "assistant",
+			ToolCalls: []model.ToolCall{{
+				Index: event.OutputIndex,
+				ID:    event.Item.CallID,
+				Type:  "function",
+				Function: model.FunctionCall{
+					Name:      event.Item.Name,
+					Arguments: event.Item.Arguments,
+				},
+			}},
+		}
+	case "response.completed":
+		if event.Response == nil {
+			return resp
+		}
+
+		o.streamID = lo.Ternary(event.Response.ID != "", event.Response.ID, o.streamID)
+		o.streamModel = lo.Ternary(event.Response.Model != "", event.Response.Model, o.streamModel)
+		resp = ensureCompatInternalChunk(resp, o.streamID, o.streamModel)
+		if resp.Usage == nil && event.Response.Usage != nil {
+			resp.Usage = convertCompatResponsesUsage(event.Response.Usage)
+		}
+
+		toolCalls := o.buildPendingToolCallsFromCompatOutputs(event.Response.Output)
+		if len(toolCalls) == 0 {
+			return resp
+		}
+
+		ensureInternalResponseChoice(resp)
+		if resp.Choices[0].Delta == nil {
+			resp.Choices[0].Delta = &model.Message{Role: "assistant"}
+		}
+		resp.Choices[0].Delta.Role = "assistant"
+		resp.Choices[0].Delta.ToolCalls = append(resp.Choices[0].Delta.ToolCalls, toolCalls...)
+		resp.Choices[0].FinishReason = lo.ToPtr("tool_calls")
+	}
+
+	return resp
+}
+
+func (o *ResponseOutbound) buildPendingToolCallsFromCompatOutputs(items []protocolcompat.ResponsesOutput) []model.ToolCall {
+	toolCalls := make([]model.ToolCall, 0)
+	for idx, item := range items {
+		if item.Type != "function_call" {
+			continue
+		}
+		state := o.getToolCallStreamState(item.CallID)
+		if state.completedEmitted || state.hasArgumentDelta {
+			continue
+		}
+		state.completedEmitted = true
+		toolCalls = append(toolCalls, model.ToolCall{
+			Index: idx,
+			ID:    item.CallID,
+			Type:  "function",
+			Function: model.FunctionCall{
+				Name:      item.Name,
+				Arguments: item.Arguments,
+			},
+		})
+	}
+	return toolCalls
+}
+
+func mergeCompatChatChunks(chunks []protocolcompat.ChatCompletionsChunk) *protocolcompat.ChatCompletionsChunk {
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	merged := &protocolcompat.ChatCompletionsChunk{}
+	for _, chunk := range chunks {
+		if merged.ID == "" {
+			merged.ID = chunk.ID
+		}
+		if merged.Object == "" {
+			merged.Object = chunk.Object
+		}
+		if merged.Created == 0 {
+			merged.Created = chunk.Created
+		}
+		if merged.Model == "" {
+			merged.Model = chunk.Model
+		}
+		if merged.SystemFingerprint == "" {
+			merged.SystemFingerprint = chunk.SystemFingerprint
+		}
+		if merged.ServiceTier == "" {
+			merged.ServiceTier = chunk.ServiceTier
+		}
+		if chunk.Usage != nil {
+			merged.Usage = chunk.Usage
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		if len(merged.Choices) == 0 {
+			merged.Choices = append(merged.Choices, chunk.Choices[0])
+			continue
+		}
+
+		dst := &merged.Choices[0]
+		src := chunk.Choices[0]
+		if dst.Delta.Role == "" {
+			dst.Delta.Role = src.Delta.Role
+		}
+		if src.Delta.Content != nil && (dst.Delta.Content == nil || *src.Delta.Content != "") {
+			dst.Delta.Content = src.Delta.Content
+		}
+		if src.Delta.ReasoningContent != nil {
+			dst.Delta.ReasoningContent = src.Delta.ReasoningContent
+		}
+		if len(src.Delta.ToolCalls) > 0 {
+			dst.Delta.ToolCalls = append(dst.Delta.ToolCalls, src.Delta.ToolCalls...)
+		}
+		if src.FinishReason != nil {
+			dst.FinishReason = src.FinishReason
+		}
+	}
+
+	if merged.Object == "" {
+		merged.Object = "chat.completion.chunk"
+	}
+
+	return merged
+}
+
+func ensureCompatInternalChunk(resp *model.InternalLLMResponse, id, modelName string) *model.InternalLLMResponse {
+	if resp == nil {
+		resp = &model.InternalLLMResponse{
+			Object: "chat.completion.chunk",
+		}
+	}
+	if resp.ID == "" {
+		resp.ID = id
+	}
+	if resp.Model == "" {
+		resp.Model = modelName
+	}
+	return resp
+}
+
+func ensureInternalResponseChoice(resp *model.InternalLLMResponse) {
+	if resp == nil {
+		return
+	}
+	if len(resp.Choices) == 0 {
+		resp.Choices = []model.Choice{{Index: 0}}
+	}
+}
+
+func convertCompatResponsesUsage(usage *protocolcompat.ResponsesUsage) *model.Usage {
+	if usage == nil {
+		return nil
+	}
+
+	result := &model.Usage{
+		PromptTokens:     int64(usage.InputTokens),
+		CompletionTokens: int64(usage.OutputTokens),
+		TotalTokens:      int64(usage.TotalTokens),
+	}
+	if usage.InputTokensDetails != nil && usage.InputTokensDetails.CachedTokens > 0 {
+		result.PromptTokensDetails = &model.PromptTokensDetails{
+			CachedTokens: int64(usage.InputTokensDetails.CachedTokens),
+		}
+	}
+	if usage.OutputTokensDetails != nil && usage.OutputTokensDetails.ReasoningTokens > 0 {
+		result.CompletionTokensDetails = &model.CompletionTokensDetails{
+			ReasoningTokens: int64(usage.OutputTokensDetails.ReasoningTokens),
+		}
+	}
+	return result
+}
+
+func convertLegacyResponsesUsageToCompat(usage *ResponsesUsage) *protocolcompat.ResponsesUsage {
+	if usage == nil {
+		return nil
+	}
+
+	result := &protocolcompat.ResponsesUsage{
+		InputTokens:  int(usage.InputTokens),
+		OutputTokens: int(usage.OutputTokens),
+		TotalTokens:  int(usage.TotalTokens),
+	}
+	if usage.InputTokenDetails.CachedTokens > 0 {
+		result.InputTokensDetails = &protocolcompat.ResponsesInputTokensDetails{
+			CachedTokens: int(usage.InputTokenDetails.CachedTokens),
+		}
+	}
+	if usage.OutputTokenDetails.ReasoningTokens > 0 {
+		result.OutputTokensDetails = &protocolcompat.ResponsesOutputTokensDetails{
+			ReasoningTokens: int(usage.OutputTokenDetails.ReasoningTokens),
+		}
+	}
+	return result
+}
+
+func convertLegacyResponsesItemToCompat(item ResponsesItem) protocolcompat.ResponsesOutput {
+	compatItem := protocolcompat.ResponsesOutput{
+		Type:      item.Type,
+		ID:        item.ID,
+		Role:      item.Role,
+		CallID:    item.CallID,
+		Name:      item.Name,
+		Arguments: item.Arguments,
+	}
+	if item.Status != nil {
+		compatItem.Status = *item.Status
+	}
+	if item.Result != nil {
+		compatItem.EncryptedContent = *item.Result
+	}
+	for _, summary := range item.Summary {
+		compatItem.Summary = append(compatItem.Summary, protocolcompat.ResponsesSummary{
+			Type: summary.Type,
+			Text: summary.Text,
+		})
+	}
+	if item.Content != nil {
+		for _, contentItem := range item.Content.Items {
+			compatItem.Content = append(compatItem.Content, protocolcompat.ResponsesContentPart{
+				Type:     contentItem.Type,
+				Text:     lo.FromPtr(contentItem.Text),
+				ImageURL: lo.FromPtr(contentItem.ImageURL),
+			})
+		}
+	}
+	return compatItem
 }
 
 func buildToolCallsFromResponsesItems(items []ResponsesItem) []model.ToolCall {
