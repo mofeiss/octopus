@@ -201,28 +201,125 @@ func (ra *relayAttempt) capturePassthroughInternalStream(resp *transformerModel.
 	if ra.passthroughInternalResponse == nil {
 		ra.passthroughInternalResponse = &transformerModel.InternalLLMResponse{}
 	}
+	aggregate := ra.passthroughInternalResponse
 	if resp.ID != "" {
-		ra.passthroughInternalResponse.ID = resp.ID
+		aggregate.ID = resp.ID
 	}
 	if resp.Model != "" {
-		ra.passthroughInternalResponse.Model = resp.Model
+		aggregate.Model = resp.Model
 	}
 	if resp.Object != "" {
-		ra.passthroughInternalResponse.Object = resp.Object
+		if resp.Object == "chat.completion.chunk" {
+			if aggregate.Object == "" || aggregate.Object == "chat.completion.chunk" {
+				aggregate.Object = "chat.completion"
+			}
+		} else {
+			aggregate.Object = resp.Object
+		}
 	}
 	if resp.Created != 0 {
-		ra.passthroughInternalResponse.Created = resp.Created
+		aggregate.Created = resp.Created
 	}
 	if resp.SystemFingerprint != "" {
-		ra.passthroughInternalResponse.SystemFingerprint = resp.SystemFingerprint
+		aggregate.SystemFingerprint = resp.SystemFingerprint
 	}
 	if resp.ServiceTier != "" {
-		ra.passthroughInternalResponse.ServiceTier = resp.ServiceTier
+		aggregate.ServiceTier = resp.ServiceTier
 	}
 	if resp.Usage != nil {
-		ra.passthroughInternalResponse.Usage = resp.Usage
+		aggregate.Usage = resp.Usage
 	}
-	if len(resp.Choices) > 0 {
-		ra.passthroughInternalResponse.Choices = resp.Choices
+	for _, choice := range resp.Choices {
+		aggregateChoice := passthroughAggregateChoice(aggregate, choice.Index)
+		if choice.Message != nil {
+			passthroughMergeMessage(aggregateChoice.Message, choice.Message)
+		}
+		if choice.Delta != nil {
+			passthroughMergeMessage(aggregateChoice.Message, choice.Delta)
+		}
+		if choice.FinishReason != nil {
+			aggregateChoice.FinishReason = choice.FinishReason
+		}
+		if choice.Logprobs != nil {
+			if aggregateChoice.Logprobs == nil {
+				aggregateChoice.Logprobs = &transformerModel.LogprobsContent{}
+			}
+			aggregateChoice.Logprobs.Content = append(aggregateChoice.Logprobs.Content, choice.Logprobs.Content...)
+		}
 	}
+}
+
+func passthroughAggregateChoice(resp *transformerModel.InternalLLMResponse, index int) *transformerModel.Choice {
+	for i := range resp.Choices {
+		if resp.Choices[i].Index == index {
+			if resp.Choices[i].Message == nil {
+				resp.Choices[i].Message = &transformerModel.Message{}
+			}
+			return &resp.Choices[i]
+		}
+	}
+
+	resp.Choices = append(resp.Choices, transformerModel.Choice{
+		Index:   index,
+		Message: &transformerModel.Message{},
+	})
+	return &resp.Choices[len(resp.Choices)-1]
+}
+
+func passthroughMergeMessage(dst, src *transformerModel.Message) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.Role != "" {
+		dst.Role = src.Role
+	}
+	if src.Content.Content != nil && *src.Content.Content != "" {
+		if dst.Content.Content == nil {
+			dst.Content.Content = new(string)
+		}
+		*dst.Content.Content += *src.Content.Content
+	}
+	if len(src.Content.MultipleContent) > 0 {
+		dst.Content.MultipleContent = append(dst.Content.MultipleContent, src.Content.MultipleContent...)
+	}
+	if len(src.Images) > 0 {
+		dst.Content.MultipleContent = append(dst.Content.MultipleContent, src.Images...)
+	}
+	if reasoning := src.GetReasoningContent(); reasoning != "" {
+		if dst.ReasoningContent == nil {
+			dst.ReasoningContent = new(string)
+		}
+		*dst.ReasoningContent += reasoning
+	}
+	for _, toolCall := range src.ToolCalls {
+		dst.ToolCalls = passthroughMergeToolCall(dst.ToolCalls, toolCall)
+	}
+	if src.Refusal != "" {
+		dst.Refusal = src.Refusal
+	}
+	if src.Audio != nil {
+		dst.Audio = src.Audio
+	}
+}
+
+func passthroughMergeToolCall(toolCalls []transformerModel.ToolCall, delta transformerModel.ToolCall) []transformerModel.ToolCall {
+	for i := range toolCalls {
+		if toolCalls[i].Index != delta.Index {
+			continue
+		}
+		if delta.ID != "" {
+			toolCalls[i].ID = delta.ID
+		}
+		if delta.Type != "" {
+			toolCalls[i].Type = delta.Type
+		}
+		if delta.Function.Name != "" {
+			toolCalls[i].Function.Name += delta.Function.Name
+		}
+		if delta.Function.Arguments != "" {
+			toolCalls[i].Function.Arguments += delta.Function.Arguments
+		}
+		return toolCalls
+	}
+	return append(toolCalls, delta)
 }

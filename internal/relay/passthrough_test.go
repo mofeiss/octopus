@@ -77,3 +77,69 @@ func TestPassthroughTargetURLPreservesQuery(t *testing.T) {
 		t.Fatalf("unexpected passthrough target url: %s", target)
 	}
 }
+
+func TestCapturePassthroughInternalStreamAggregatesContent(t *testing.T) {
+	ra := &relayAttempt{}
+	stop := "stop"
+	empty := ""
+	first := "你好，"
+	second := "世界"
+
+	ra.capturePassthroughInternalStream(&transformerModel.InternalLLMResponse{
+		ID:      "resp_123",
+		Object:  "chat.completion.chunk",
+		Created: 1779446299,
+		Model:   "gpt-5.5",
+		Choices: []transformerModel.Choice{{
+			Index: 0,
+			Delta: &transformerModel.Message{Role: "assistant"},
+		}},
+	})
+	ra.capturePassthroughInternalStream(&transformerModel.InternalLLMResponse{
+		ID:     "resp_123",
+		Object: "chat.completion.chunk",
+		Model:  "gpt-5.5",
+		Choices: []transformerModel.Choice{{
+			Index: 0,
+			Delta: &transformerModel.Message{Content: transformerModel.MessageContent{Content: &first}},
+		}},
+	})
+	ra.capturePassthroughInternalStream(&transformerModel.InternalLLMResponse{
+		ID:     "resp_123",
+		Object: "chat.completion.chunk",
+		Model:  "gpt-5.5",
+		Choices: []transformerModel.Choice{{
+			Index: 0,
+			Delta: &transformerModel.Message{Content: transformerModel.MessageContent{Content: &second}},
+		}},
+	})
+	ra.capturePassthroughInternalStream(&transformerModel.InternalLLMResponse{
+		ID:     "resp_123",
+		Object: "chat.completion.chunk",
+		Model:  "gpt-5.5",
+		Choices: []transformerModel.Choice{{
+			Index:        0,
+			Delta:        &transformerModel.Message{Content: transformerModel.MessageContent{Content: &empty}},
+			FinishReason: &stop,
+		}},
+		Usage: &transformerModel.Usage{
+			PromptTokens:     10,
+			CompletionTokens: 2,
+			TotalTokens:      12,
+		},
+	})
+
+	got := ra.passthroughInternalResponse
+	if got == nil || len(got.Choices) != 1 || got.Choices[0].Message == nil || got.Choices[0].Message.Content.Content == nil {
+		t.Fatalf("expected aggregated response content, got %#v", got)
+	}
+	if *got.Choices[0].Message.Content.Content != "你好，世界" {
+		t.Fatalf("expected full content to survive final empty chunk, got %q", *got.Choices[0].Message.Content.Content)
+	}
+	if got.Choices[0].FinishReason == nil || *got.Choices[0].FinishReason != "stop" {
+		t.Fatalf("expected finish reason stop, got %#v", got.Choices[0].FinishReason)
+	}
+	if got.Usage == nil || got.Usage.TotalTokens != 12 {
+		t.Fatalf("expected usage to be captured, got %#v", got.Usage)
+	}
+}
