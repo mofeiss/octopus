@@ -287,6 +287,10 @@ func (ra *relayAttempt) forward() (int, error) {
 		log.Warnf("failed to create request: %v", err)
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
+	if err := applyParamOverrideToHTTPRequest(outboundRequest, ra.channel.ParamOverride); err != nil {
+		log.Warnf("failed to apply param override: %v", err)
+		return 0, fmt.Errorf("failed to apply param override: %w", err)
+	}
 	ra.outboundRequestContent = snapshotHTTPRequestBody(outboundRequest)
 	ra.outboundRequestProtocol = relayProtocolNameFromOutboundType(ra.resolvedType)
 
