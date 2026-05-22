@@ -3,10 +3,15 @@ FROM node:22-alpine AS frontend
 
 WORKDIR /build/web
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY web/package.json web/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm config set registry https://registry.npmmirror.com && \
+    pnpm config set fetch-retries 10 && \
+    pnpm config set fetch-retry-mintimeout 20000 && \
+    pnpm config set fetch-retry-maxtimeout 180000 && \
+    pnpm config set fetch-timeout 900000 && \
+    pnpm install --frozen-lockfile
 
 COPY web/ ./
 

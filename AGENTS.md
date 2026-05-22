@@ -88,33 +88,23 @@ gh auth refresh -h github.com --scopes write:packages,read:packages < /dev/null
 gh auth token | docker login ghcr.io -u mofeiss --password-stdin
 ```
 
-### 3. 本次有效构建命令
+### 3. Dockerfile 构建配置
 
-原始 `Dockerfile` 使用 `pnpm@latest` 和默认 npm registry。实际构建时遇到两个问题：
+仓库 `Dockerfile` 已内置稳定前端构建配置：
 
-- npm 官方 registry 在 Docker 构建中下载 Next/SWC/Sharp 相关包超时。
-- `pnpm@latest` 解析到 pnpm 11 后，会默认忽略 `@swc/core`、`sharp`、`unrs-resolver` 的 build scripts，导致 Next.js 构建不可用。
+- 固定 `pnpm@9.15.9`，避免 `pnpm@latest` 解析到 pnpm 11 后默认忽略 `@swc/core`、`sharp`、`unrs-resolver` 的 build scripts。
+- 使用 `registry.npmmirror.com` 并增加 fetch retry/timeout，降低 Docker 构建时 Next/SWC/Sharp 相关包下载失败概率。
 
-本次没有修改仓库里的 `Dockerfile`，而是通过 stdin 临时生成构建用 Dockerfile。发布时同时打 `my-dev` 和 `latest` 两个 tag：
+发布时同时打 `my-dev` 和 `latest` 两个 tag：
 
 ```bash
-node - <<'NODE' | docker buildx build --builder codex-multi --platform linux/amd64,linux/arm64 --build-arg GIT_VERSION=my-dev -t ghcr.io/mofeiss/octopus:my-dev -t ghcr.io/mofeiss/octopus:latest --push -f - .
-const fs = require('fs');
-let s = fs.readFileSync('Dockerfile', 'utf8');
-s = s.replace('RUN corepack enable && corepack prepare pnpm@latest --activate', 'RUN corepack enable && corepack prepare pnpm@9.15.9 --activate');
-s = s.replace(
-  'RUN pnpm install --frozen-lockfile',
-  `RUN pnpm config set registry https://registry.npmmirror.com && pnpm config set fetch-retries 10 && pnpm config set fetch-retry-mintimeout 20000 && pnpm config set fetch-retry-maxtimeout 180000 && pnpm config set fetch-timeout 900000 && pnpm install --frozen-lockfile`
-);
-process.stdout.write(s);
-NODE
+docker buildx build --builder codex-multi --platform linux/amd64,linux/arm64 --build-arg GIT_VERSION=my-dev -t ghcr.io/mofeiss/octopus:my-dev -t ghcr.io/mofeiss/octopus:latest --push -f Dockerfile .
 ```
 
 关键点：
 
 - `pnpm@9.15.9` 可以正常执行依赖 postinstall scripts。
 - `registry.npmmirror.com` 和较长 fetch timeout 能显著降低构建下载失败概率。
-- 通过 `-f -` 使用临时 Dockerfile，不污染仓库文件。
 - `--build-arg GIT_VERSION=my-dev` 会让启动 banner 里的 Version 显示为 `my-dev`。
 - `latest` 必须随每次发布一起更新，保证 SaaS 使用 `latest` 时代表最后一个版本。
 
