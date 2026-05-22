@@ -39,7 +39,10 @@
 
 ```text
 ghcr.io/mofeiss/octopus:my-dev
+ghcr.io/mofeiss/octopus:latest
 ```
+
+约定：`latest` 代表最后一个已发布版本，SaaS 平台部署固定使用 `latest`，并通过 `pull_policy: always` 强制拉取最新 digest。
 
 ### 1. 多架构构建器
 
@@ -92,10 +95,10 @@ gh auth token | docker login ghcr.io -u mofeiss --password-stdin
 - npm 官方 registry 在 Docker 构建中下载 Next/SWC/Sharp 相关包超时。
 - `pnpm@latest` 解析到 pnpm 11 后，会默认忽略 `@swc/core`、`sharp`、`unrs-resolver` 的 build scripts，导致 Next.js 构建不可用。
 
-本次没有修改仓库里的 `Dockerfile`，而是通过 stdin 临时生成构建用 Dockerfile：
+本次没有修改仓库里的 `Dockerfile`，而是通过 stdin 临时生成构建用 Dockerfile。发布时同时打 `my-dev` 和 `latest` 两个 tag：
 
 ```bash
-node - <<'NODE' | docker buildx build --builder codex-multi --platform linux/amd64,linux/arm64 --build-arg GIT_VERSION=my-dev -t ghcr.io/mofeiss/octopus:my-dev --push -f - .
+node - <<'NODE' | docker buildx build --builder codex-multi --platform linux/amd64,linux/arm64 --build-arg GIT_VERSION=my-dev -t ghcr.io/mofeiss/octopus:my-dev -t ghcr.io/mofeiss/octopus:latest --push -f - .
 const fs = require('fs');
 let s = fs.readFileSync('Dockerfile', 'utf8');
 s = s.replace('RUN corepack enable && corepack prepare pnpm@latest --activate', 'RUN corepack enable && corepack prepare pnpm@9.15.9 --activate');
@@ -113,6 +116,13 @@ NODE
 - `registry.npmmirror.com` 和较长 fetch timeout 能显著降低构建下载失败概率。
 - 通过 `-f -` 使用临时 Dockerfile，不污染仓库文件。
 - `--build-arg GIT_VERSION=my-dev` 会让启动 banner 里的 Version 显示为 `my-dev`。
+- `latest` 必须随每次发布一起更新，保证 SaaS 使用 `latest` 时代表最后一个版本。
+
+如果已经推送了 `my-dev`，但忘记推 `latest`，可以不重建镜像，直接把当前 `my-dev` manifest 复制成 `latest`：
+
+```bash
+docker buildx imagetools create -t ghcr.io/mofeiss/octopus:latest ghcr.io/mofeiss/octopus:my-dev
+```
 
 ### 4. 推送后验证
 
@@ -120,12 +130,13 @@ NODE
 
 ```bash
 docker buildx imagetools inspect ghcr.io/mofeiss/octopus:my-dev
+docker buildx imagetools inspect ghcr.io/mofeiss/octopus:latest
 ```
 
-本次成功推送的 manifest digest：
+本次成功推送并同步到 `latest` 的 manifest digest：
 
 ```text
-sha256:ad3d909cb137685aa86d544e012cfa2fd1ef46374518bff8590ad3ee0b6d5255
+sha256:0185c3021e7de0f7a71c4c8fc916d8c4c093e66ef6e66ee79549eb08c75e14ad
 ```
 
 验证结果包含：
@@ -141,3 +152,26 @@ Platform: linux/arm64
 - 如果推送 GHCR 被拒绝，优先检查 `gh auth status` 里的 token scopes。
 - 如果 pnpm 11 提示 ignored build scripts，不要只改 `onlyBuiltDependencies`；在当前项目构建场景下，固定 `pnpm@9.15.9` 更直接稳定。
 - 如果重新执行构建，BuildKit 会复用缓存，通常只需要重新导出和推送镜像层。
+- 如果 SaaS 平台重新部署 `latest` 仍使用旧镜像，Compose 里必须加 `pull_policy: always`。
+
+### 6. SaaS 部署写法
+
+SaaS 平台部署使用 `latest`，并强制每次部署拉取远端最新 digest：
+
+```yaml
+services:
+  octopus:
+    image: ghcr.io/mofeiss/octopus:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      PORT: ${PORT-8080}
+      NODE_ENV: ${NODE_ENV-production}
+      OCTOPUS_DATABASE_TYPE: ${OCTOPUS_DATABASE_TYPE-postgres}
+      OCTOPUS_DATABASE_PATH: ${OCTOPUS_DATABASE_PATH-postgresql://postgres:bvbf3o0hcjakdm9k@octopus-postgresql-krmgia:5432/postgres?sslmode=disable}
+      OCTOPUS_SERVER_HOST: ${OCTOPUS_SERVER_HOST-0.0.0.0}
+      OCTOPUS_SERVER_PORT: ${PORT-8080}
+      OCTOPUS_LOG_LEVEL: ${OCTOPUS_LOG_LEVEL-info}
+    ports:
+      - "8080"
+```
