@@ -15,7 +15,7 @@ RUN pnpm config set registry https://registry.npmmirror.com && \
 
 COPY web/ ./
 
-ARG GIT_VERSION=dev
+ARG GIT_VERSION=my-dev
 RUN NEXT_PUBLIC_APP_VERSION="${GIT_VERSION}" pnpm run build
 
 # Stage 2: Build Go binary
@@ -36,7 +36,7 @@ COPY --from=frontend /build/web/out ./static/out
 RUN python3 scripts/updatePrice.py
 
 # Build metadata
-ARG GIT_VERSION=dev
+ARG GIT_VERSION=my-dev
 RUN COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') && \
     BUILD_TIME=$(date +'%F %T %z') && \
     CGO_ENABLED=0 go build -o octopus \
