@@ -19,8 +19,10 @@ import (
 )
 
 const (
-	updateUrl    = "https://github.com/bestruirui/octopus/releases/latest/download"
-	updateApiUrl = "https://api.github.com/repos/bestruirui/octopus/releases/latest"
+	// [fork] Use this fork's releases for update checks and binary downloads.
+	updateRepo   = "mofeiss/octopus"
+	updateUrl    = "https://github.com/" + updateRepo + "/releases/latest/download"
+	updateApiUrl = "https://api.github.com/repos/" + updateRepo + "/releases/latest"
 )
 
 type LatestInfo struct {
