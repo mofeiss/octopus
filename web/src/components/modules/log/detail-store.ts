@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type LogRequestSectionKey = 'original' | 'outbound';
-export type LogResponseSectionKey = 'original' | 'outbound';
+export type LogResponseSectionKey = 'original' | 'preview' | 'outbound';
 
 interface LogDetailState {
     activeRequestSection: LogRequestSectionKey | null;

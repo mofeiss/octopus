@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -202,6 +203,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 	if fwdErr == nil {
 		// ====== 成功 ======
 		ra.collectResponse()
+		ra.captureStreamPreview()
 		ra.usedKey.TotalCost += ra.metrics.Stats.InputCost + ra.metrics.Stats.OutputCost
 		op.ChannelKeyUpdate(ra.usedKey)
 
@@ -237,6 +239,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 	written := ra.c.Writer.Written()
 	if written {
 		ra.collectResponse()
+		ra.captureStreamPreview()
 	}
 	return attemptResult{
 		Success: false,
@@ -545,4 +548,29 @@ func (ra *relayAttempt) collectResponse() {
 	}
 
 	ra.metrics.SetInternalResponse(internalResponse, ra.internalRequest.Model)
+}
+
+// [fork] build a final JSON preview for stream logs from the aggregated internal response.
+func (ra *relayAttempt) captureStreamPreview() {
+	if ra.metrics == nil || ra.metrics.InternalResponse == nil || ra.internalRequest == nil || ra.internalRequest.Stream == nil || !*ra.internalRequest.Stream {
+		return
+	}
+
+	inboundAdapter := ra.inAdapter
+	if inboundAdapter == nil {
+		return
+	}
+
+	previewBody, err := inboundAdapter.TransformResponse(ra.c.Request.Context(), ra.metrics.InternalResponse)
+	if err != nil || len(previewBody) == 0 {
+		return
+	}
+
+	if json.Valid(previewBody) {
+		ra.metrics.SetStreamPreviewContent(string(previewBody))
+		return
+	}
+
+	// Fallback: keep the raw body if the inbound adapter already emitted a non-JSON stream snapshot.
+	ra.metrics.SetStreamPreviewContent(string(previewBody))
 }

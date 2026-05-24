@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
-import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound } from 'lucide-react';
+import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound, Braces } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
 import JsonView from '@uiw/react-json-view';
@@ -307,9 +307,9 @@ function RequestContentPanel({
     const activeRequestSection = useLogDetailStore((state) => state.activeRequestSection);
     const setActiveRequestSection = useLogDetailStore((state) => state.setActiveRequestSection);
 
-    const handleActivate = (sectionValue: LogRequestSectionKey) => {
+    const handleActivate = (sectionValue: LogContentSectionKey) => {
         const nextSection = activeRequestSection === sectionValue ? null : sectionValue;
-        setActiveRequestSection(nextSection);
+        setActiveRequestSection(nextSection as LogRequestSectionKey | null);
     };
 
     return (
@@ -391,6 +391,8 @@ function ResponseContentPanel({
     isDetailLoadFailed,
     originalResponseContent,
     originalResponseParsedContent,
+    streamPreviewContent,
+    streamPreviewParsedContent,
     responseContent,
     responseParsedContent,
 }: {
@@ -399,17 +401,26 @@ function ResponseContentPanel({
     isDetailLoadFailed: boolean;
     originalResponseContent: string | undefined;
     originalResponseParsedContent?: ParsedLogContent;
+    streamPreviewContent: string | undefined;
+    streamPreviewParsedContent?: ParsedLogContent;
     responseContent: string | undefined;
     responseParsedContent?: ParsedLogContent;
 }) {
     const t = useTranslations('log.card');
     const activeResponseSection = useLogDetailStore((state) => state.activeResponseSection);
     const setActiveResponseSection = useLogDetailStore((state) => state.setActiveResponseSection);
+    const hasStreamPreview = !!streamPreviewContent;
 
-    const handleActivate = (sectionValue: LogResponseSectionKey) => {
+    const handleActivate = (sectionValue: LogContentSectionKey) => {
         const nextSection = activeResponseSection === sectionValue ? null : sectionValue;
         setActiveResponseSection(nextSection);
     };
+
+    useEffect(() => {
+        if (!hasStreamPreview && activeResponseSection === 'preview') {
+            setActiveResponseSection('original');
+        }
+    }, [activeResponseSection, hasStreamPreview, setActiveResponseSection]);
 
     return (
         <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
@@ -465,6 +476,18 @@ function ResponseContentPanel({
                                     onActivate={handleActivate}
                                     icon={<ArrowDownToLine className="size-4 text-sky-500 shrink-0" />}
                                 />
+                                {hasStreamPreview && (
+                                    <LogContentSection
+                                        sectionValue="preview"
+                                        value={streamPreviewContent}
+                                        parsedContent={streamPreviewParsedContent}
+                                        title={t('streamPreviewLabel')}
+                                        fallbackText={t('noResponseContent')}
+                                        isActive={activeResponseSection === 'preview'}
+                                        onActivate={handleActivate}
+                                        icon={<Braces className="size-4 text-amber-500 shrink-0" />}
+                                    />
+                                )}
                                 <LogContentSection
                                     sectionValue="outbound"
                                     value={responseContent}
@@ -494,12 +517,14 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
     const originalRequestContent = detailQuery.data?.original_request_content ?? log.original_request_content;
     const outboundRequestContent = detailQuery.data?.outbound_request_content ?? log.outbound_request_content;
     const originalResponseContent = detailQuery.data?.original_response_content ?? log.original_response_content;
+    const streamPreviewContent = detailQuery.data?.stream_preview_content ?? log.stream_preview_content;
     const responseContent = detailQuery.data?.response_content ?? log.response_content;
     const originalRequestProtocol = detailQuery.data?.original_request_protocol ?? log.original_request_protocol;
     const outboundRequestProtocol = detailQuery.data?.outbound_request_protocol ?? log.outbound_request_protocol;
     const originalRequestParsedContent = detailQuery.data?.parsed_original_request_content ?? log.parsed_original_request_content;
     const outboundRequestParsedContent = detailQuery.data?.parsed_outbound_request_content ?? log.parsed_outbound_request_content;
     const originalResponseParsedContent = detailQuery.data?.parsed_original_response_content ?? log.parsed_original_response_content;
+    const streamPreviewParsedContent = detailQuery.data?.parsed_stream_preview_content ?? log.parsed_stream_preview_content;
     const responseParsedContent = detailQuery.data?.parsed_response_content ?? log.parsed_response_content;
     const isDetailLoading = shouldFetchDetail && detailQuery.isLoading && !detailQuery.data;
     const isDetailLoadFailed = shouldFetchDetail && !detailQuery.data && !!detailQuery.error;
@@ -535,6 +560,8 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
                     isDetailLoadFailed={isDetailLoadFailed}
                     originalResponseContent={originalResponseContent}
                     originalResponseParsedContent={originalResponseParsedContent}
+                    streamPreviewContent={streamPreviewContent}
+                    streamPreviewParsedContent={streamPreviewParsedContent}
                     responseContent={responseContent}
                     responseParsedContent={responseParsedContent}
                 />

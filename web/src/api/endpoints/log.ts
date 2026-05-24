@@ -57,6 +57,7 @@ export interface RelayLog {
     outbound_request_protocol?: string;  // 出站请求协议
     original_response_content: string;   // 原始上游响应内容
     response_content: string;    // 响应内容
+    stream_preview_content: string; // 流式最终预览内容
     error: string;               // 错误信息
     attempts?: ChannelAttempt[]; // 所有尝试记录
     total_attempts?: number;     // 总尝试次数
@@ -73,6 +74,7 @@ export interface RelayLog {
     parsed_request_content?: ParsedLogContent;
     parsed_outbound_request_content?: ParsedLogContent;
     parsed_original_response_content?: ParsedLogContent;
+    parsed_stream_preview_content?: ParsedLogContent;
     parsed_response_content?: ParsedLogContent;
 }
 
@@ -124,6 +126,9 @@ export function hydrateLogDetail(detail: RelayLog): RelayLog {
     }
     if (detail.response_content && !detail.parsed_response_content) {
         hydrated.parsed_response_content = parseLogContent(detail.response_content);
+    }
+    if (detail.stream_preview_content && !detail.parsed_stream_preview_content) {
+        hydrated.parsed_stream_preview_content = parseLogContent(detail.stream_preview_content);
     }
 
     return hydrated;

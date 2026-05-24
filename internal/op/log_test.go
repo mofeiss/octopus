@@ -65,6 +65,7 @@ func TestRelayLogListSummaryOmitsContentAndMarksFlag(t *testing.T) {
 		OutboundRequestContent:  `{"outbound":"full"}`,
 		OriginalResponseContent: `{"upstream":"full"}`,
 		ResponseContent:         `{"resp":"full"}`,
+		StreamPreviewContent:    `{"preview":"full"}`,
 	}
 	if err := RelayLogAdd(ctx, logEntry); err != nil {
 		t.Fatalf("relay log add failed: %v", err)
@@ -99,6 +100,9 @@ func TestRelayLogListSummaryOmitsContentAndMarksFlag(t *testing.T) {
 	if logs[0].ResponseContent != "" {
 		t.Fatalf("expected response content omitted, got %q", logs[0].ResponseContent)
 	}
+	if logs[0].StreamPreviewContent != "" {
+		t.Fatalf("expected stream preview content omitted, got %q", logs[0].StreamPreviewContent)
+	}
 	if !logs[0].ContentOmitted {
 		t.Fatalf("expected content_omitted=true for summary log")
 	}
@@ -121,6 +125,7 @@ func TestRelayLogGetByIDRespectsAPIKeyScope(t *testing.T) {
 		OutboundRequestProtocol: "Anthropic",
 		OriginalResponseContent: `{"upstream":"response"}`,
 		ResponseContent:         `{"response":"data"}`,
+		StreamPreviewContent:    `{"preview":"response"}`,
 		APIKeyID:                10,
 		APIKeyName:              "ak-10",
 	}
@@ -142,6 +147,9 @@ func TestRelayLogGetByIDRespectsAPIKeyScope(t *testing.T) {
 	}
 	if got.OriginalResponseContent == "" {
 		t.Fatalf("expected full upstream response diagnostics from detail endpoint path")
+	}
+	if got.StreamPreviewContent == "" {
+		t.Fatalf("expected final stream preview from detail endpoint path")
 	}
 	if got.OriginalRequestContent == "" || got.OutboundRequestContent == "" {
 		t.Fatalf("expected full request diagnostics from detail endpoint path")

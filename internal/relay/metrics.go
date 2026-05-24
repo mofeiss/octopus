@@ -32,6 +32,8 @@ type RelayMetrics struct {
 	// [fork] response snapshots for detail diagnostics
 	OriginalResponseContent string
 	ResponseContent         string
+	// [fork] final non-stream preview derived from the aggregated internal response
+	StreamPreviewContent string
 
 	// 统计指标
 	ActualModel string
@@ -93,6 +95,11 @@ func (m *RelayMetrics) SetOutboundRequest(content string, protocol string) {
 func (m *RelayMetrics) SetResponseSnapshots(originalContent string, convertedContent string) {
 	m.OriginalResponseContent = originalContent
 	m.ResponseContent = convertedContent
+}
+
+// [fork] keep a final preview body for stream logs so the detail view can read it as JSON.
+func (m *RelayMetrics) SetStreamPreviewContent(content string) {
+	m.StreamPreviewContent = content
 }
 
 func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attempts []model.ChannelAttempt) {
@@ -231,6 +238,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	relayLog.OutboundRequestProtocol = m.OutboundRequestProtocol
 	// [fork] raw upstream response body before protocol conversion
 	relayLog.OriginalResponseContent = m.OriginalResponseContent
+	relayLog.StreamPreviewContent = m.StreamPreviewContent
 
 	// 响应内容
 	if m.ResponseContent != "" {
