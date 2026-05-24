@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -181,6 +182,15 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 func (ra *relayAttempt) attempt() attemptResult {
 	span := ra.iter.StartAttempt(ra.channel.ID, ra.usedKey.ID, ra.channel.Name)
 
+	// [fork] capture the final body written to the inbound client for log detail.
+	originalWriter := ra.c.Writer
+	writerSnapshot := &captureResponseWriter{ResponseWriter: originalWriter}
+	ra.c.Writer = writerSnapshot
+	defer func() {
+		ra.metrics.SetResponseSnapshots(ra.metrics.OriginalResponseContent, writerSnapshot.CapturedBody())
+		ra.c.Writer = originalWriter
+	}()
+
 	// 转发请求
 	statusCode, fwdErr := ra.forward()
 	ra.metrics.SetOutboundRequest(ra.outboundRequestContent, ra.outboundRequestProtocol)
@@ -304,12 +314,23 @@ func (ra *relayAttempt) forward() (int, error) {
 	}
 	defer response.Body.Close()
 
+	// [fork] tee the upstream body so logs keep the raw response before conversion.
+	rawResponseSnapshot := &bytes.Buffer{}
+	response.Body = io.NopCloser(io.TeeReader(response.Body, rawResponseSnapshot))
+	defer func() {
+		if rawResponseSnapshot.Len() > 0 {
+			ra.metrics.OriginalResponseContent = rawResponseSnapshot.String()
+		}
+	}()
+
 	// 检查响应状态
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, err := io.ReadAll(response.Body)
 		if err != nil {
 			return 0, fmt.Errorf("failed to read response body: %w", err)
 		}
+		// [fork] keep upstream error payload visible in log detail.
+		ra.metrics.SetResponseSnapshots(string(body), "")
 		return response.StatusCode, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
 	}
 

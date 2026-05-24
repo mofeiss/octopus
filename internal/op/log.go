@@ -209,6 +209,7 @@ func relayLogToSummary(relayLog model.RelayLog) model.RelayLog {
 	summary.RequestContent = ""
 	summary.OriginalRequestContent = ""
 	summary.OutboundRequestContent = ""
+	summary.OriginalResponseContent = ""
 	summary.ResponseContent = ""
 	summary.ContentOmitted = true
 	return summary
@@ -288,7 +289,7 @@ func relayLogListWithContentFlag(
 				}
 			}
 			if !includeContent {
-				query = query.Omit("request_content", "original_request_content", "outbound_request_content", "response_content")
+				query = query.Omit("request_content", "original_request_content", "outbound_request_content", "original_response_content", "response_content")
 			}
 
 			var dbLogs []model.RelayLog

@@ -50,20 +50,21 @@ func TestRelayLogListSummaryOmitsContentAndMarksFlag(t *testing.T) {
 	ctx := setupRelayLogTestDB(t)
 
 	logEntry := model.RelayLog{
-		Time:                   time.Now().Unix(),
-		RequestModelName:       "gpt-4o-mini",
-		ChannelId:              1,
-		ChannelName:            "test-channel",
-		ActualModelName:        "gpt-4o-mini",
-		InputTokens:            10,
-		OutputTokens:           20,
-		Ftut:                   123,
-		UseTime:                456,
-		Cost:                   0.001,
-		RequestContent:         `{"req":"full"}`,
-		OriginalRequestContent: `{"raw":"full"}`,
-		OutboundRequestContent: `{"outbound":"full"}`,
-		ResponseContent:        `{"resp":"full"}`,
+		Time:                    time.Now().Unix(),
+		RequestModelName:        "gpt-4o-mini",
+		ChannelId:               1,
+		ChannelName:             "test-channel",
+		ActualModelName:         "gpt-4o-mini",
+		InputTokens:             10,
+		OutputTokens:            20,
+		Ftut:                    123,
+		UseTime:                 456,
+		Cost:                    0.001,
+		RequestContent:          `{"req":"full"}`,
+		OriginalRequestContent:  `{"raw":"full"}`,
+		OutboundRequestContent:  `{"outbound":"full"}`,
+		OriginalResponseContent: `{"upstream":"full"}`,
+		ResponseContent:         `{"resp":"full"}`,
 	}
 	if err := RelayLogAdd(ctx, logEntry); err != nil {
 		t.Fatalf("relay log add failed: %v", err)
@@ -92,6 +93,9 @@ func TestRelayLogListSummaryOmitsContentAndMarksFlag(t *testing.T) {
 	if logs[0].OutboundRequestContent != "" {
 		t.Fatalf("expected outbound request content omitted, got %q", logs[0].OutboundRequestContent)
 	}
+	if logs[0].OriginalResponseContent != "" {
+		t.Fatalf("expected original response content omitted, got %q", logs[0].OriginalResponseContent)
+	}
 	if logs[0].ResponseContent != "" {
 		t.Fatalf("expected response content omitted, got %q", logs[0].ResponseContent)
 	}
@@ -115,6 +119,7 @@ func TestRelayLogGetByIDRespectsAPIKeyScope(t *testing.T) {
 		OriginalRequestProtocol: "OpenAI",
 		OutboundRequestContent:  `{"outbound":"request"}`,
 		OutboundRequestProtocol: "Anthropic",
+		OriginalResponseContent: `{"upstream":"response"}`,
 		ResponseContent:         `{"response":"data"}`,
 		APIKeyID:                10,
 		APIKeyName:              "ak-10",
@@ -134,6 +139,9 @@ func TestRelayLogGetByIDRespectsAPIKeyScope(t *testing.T) {
 	}
 	if got.RequestContent == "" || got.ResponseContent == "" {
 		t.Fatalf("expected full content from detail endpoint path")
+	}
+	if got.OriginalResponseContent == "" {
+		t.Fatalf("expected full upstream response diagnostics from detail endpoint path")
 	}
 	if got.OriginalRequestContent == "" || got.OutboundRequestContent == "" {
 		t.Fatalf("expected full request diagnostics from detail endpoint path")

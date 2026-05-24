@@ -156,13 +156,16 @@ func (ra *relayAttempt) handlePassthroughStreamResponse(ctx context.Context, res
 		}
 
 		if ev.Type != "" {
-			_, _ = ra.c.Writer.Write([]byte("event: " + ev.Type + "\n"))
+			line := []byte("event: " + ev.Type + "\n")
+			_, _ = ra.c.Writer.Write(line)
 		}
-		_, _ = ra.c.Writer.Write([]byte("data: " + ev.Data + "\n\n"))
+		dataLine := []byte("data: " + ev.Data + "\n\n")
+		_, _ = ra.c.Writer.Write(dataLine)
 		ra.c.Writer.Flush()
 	}
 
-	_, _ = ra.c.Writer.Write([]byte("data: [DONE]\n\n"))
+	doneLine := []byte("data: [DONE]\n\n")
+	_, _ = ra.c.Writer.Write(doneLine)
 	ra.c.Writer.Flush()
 	return nil
 }
@@ -190,6 +193,8 @@ func (ra *relayAttempt) handlePassthroughResponse(ctx context.Context, response 
 	if contentType == "" {
 		contentType = "application/json"
 	}
+	// [fork] passthrough returns the upstream body as-is, but keep both columns explicit in log detail.
+	ra.metrics.SetResponseSnapshots(string(body), string(body))
 	ra.c.Data(http.StatusOK, contentType, body)
 	return nil
 }

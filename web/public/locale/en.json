@@ -491,6 +491,8 @@
             "internalRequest": "Internal Request",
             "outboundRequestLabel": "Outbound Request",
             "responseContent": "Response Content",
+            "originalResponseLabel": "Raw Upstream Response",
+            "outboundResponseLabel": "Outbound Response",
             "noRequestContent": "(No request content)",
             "noResponseContent": "(No response content)",
             "firstTokenTime": "First Token Time",

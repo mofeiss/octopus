@@ -1,7 +1,10 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
 	"testing"
 
 	"github.com/bestruirui/octopus/internal/transformer/model"
@@ -61,6 +64,43 @@ func TestMarshalResponsesRequestPreservesRawResponsesPayload(t *testing.T) {
 	}
 	if firstItem["type"] != "message" {
 		t.Fatalf("input[0].type should be preserved, got %v", firstItem["type"])
+	}
+}
+
+func TestConvertToLLMResponseFromResponsesPreservesReasoningContent(t *testing.T) {
+	status := "completed"
+	resp := &ResponsesResponse{
+		ID:     "resp_reasoning",
+		Model:  "gpt-5",
+		Status: &status,
+		Output: []ResponsesItem{
+			{
+				Type: "reasoning",
+				Summary: []ResponsesReasoningSummary{
+					{Type: "summary_text", Text: "先分析约束。"},
+				},
+			},
+			{
+				Type: "message",
+				Role: "assistant",
+				Content: &ResponsesInput{
+					Items: []ResponsesItem{
+						{Type: "output_text", Text: strPtr("最终答案")},
+					},
+				},
+			},
+		},
+	}
+
+	got := convertToLLMResponseFromResponses(resp)
+	if got == nil || len(got.Choices) != 1 || got.Choices[0].Message == nil {
+		t.Fatalf("expected one converted choice, got %#v", got)
+	}
+	if got.Choices[0].Message.ReasoningContent == nil || *got.Choices[0].Message.ReasoningContent != "先分析约束。" {
+		t.Fatalf("expected reasoning content to survive conversion, got %#v", got.Choices[0].Message.ReasoningContent)
+	}
+	if got.Choices[0].Message.Content.Content == nil || *got.Choices[0].Message.Content.Content != "最终答案" {
+		t.Fatalf("expected text content to survive conversion, got %#v", got.Choices[0].Message.Content.Content)
 	}
 }
 
@@ -165,6 +205,27 @@ func TestMarshalResponsesRequestUsesCompatForRawAnthropic(t *testing.T) {
 	second, _ := input[1].(map[string]any)
 	if first["role"] != "system" || second["role"] != "user" {
 		t.Fatalf("unexpected compat roles: %#v %#v", first["role"], second["role"])
+	}
+}
+
+func TestResponseOutboundTransformResponsePreservesReasoningContent(t *testing.T) {
+	upstreamBody := []byte(`{"object":"response","id":"resp_reasoning","model":"gpt-5","status":"completed","output":[{"type":"reasoning","summary":[{"type":"summary_text","text":"先分析约束。"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"最终答案"}]}],"usage":{"input_tokens":10,"output_tokens":8,"total_tokens":18,"output_tokens_details":{"reasoning_tokens":3}}}`)
+
+	resp, err := (&ResponseOutbound{}).TransformResponse(nil, &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(upstreamBody)),
+	})
+	if err != nil {
+		t.Fatalf("TransformResponse returned error: %v", err)
+	}
+	if resp == nil || len(resp.Choices) != 1 || resp.Choices[0].Message == nil {
+		t.Fatalf("expected one chat message response, got %#v", resp)
+	}
+	if resp.Choices[0].Message.ReasoningContent == nil || *resp.Choices[0].Message.ReasoningContent != "先分析约束。" {
+		t.Fatalf("expected reasoning_content to be preserved, got %#v", resp.Choices[0].Message.ReasoningContent)
+	}
+	if resp.Choices[0].Message.Content.Content == nil || *resp.Choices[0].Message.Content.Content != "最终答案" {
+		t.Fatalf("expected output text to be preserved, got %#v", resp.Choices[0].Message.Content.Content)
 	}
 }
 

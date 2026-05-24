@@ -8,6 +8,7 @@ import (
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
+	"github.com/gin-gonic/gin"
 )
 
 // [fork] snapshotHTTPRequestBody safely captures the actual outbound body without consuming it.
@@ -33,6 +34,26 @@ func snapshotHTTPRequestBody(req *http.Request) string {
 	}
 	req.Body = io.NopCloser(bytes.NewReader(data))
 	return string(data)
+}
+
+// [fork] captureResponseWriter records the exact body written back to the inbound client.
+type captureResponseWriter struct {
+	gin.ResponseWriter
+	body bytes.Buffer
+}
+
+func (w *captureResponseWriter) Write(data []byte) (int, error) {
+	w.body.Write(data)
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *captureResponseWriter) WriteString(data string) (int, error) {
+	w.body.WriteString(data)
+	return w.ResponseWriter.WriteString(data)
+}
+
+func (w *captureResponseWriter) CapturedBody() string {
+	return w.body.String()
 }
 
 // [fork] fill relay log protocol display names from the inbound endpoint semantics.

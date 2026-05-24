@@ -491,6 +491,8 @@
       "internalRequest": "内部请求",
       "outboundRequestLabel": "出站请求",
       "responseContent": "响应内容",
+      "originalResponseLabel": "原始上游响应",
+      "outboundResponseLabel": "出站响应",
       "noRequestContent": "(无请求内容)",
       "noResponseContent": "(无响应内容)",
       "firstTokenTime": "首字时间",

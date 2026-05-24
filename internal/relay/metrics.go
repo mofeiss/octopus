@@ -27,9 +27,11 @@ type RelayMetrics struct {
 	InternalRequest  *transformerModel.InternalLLMRequest
 	InternalResponse *transformerModel.InternalLLMResponse
 	// [fork] request snapshots for detail diagnostics
-	InternalRequestContent  string
 	OutboundRequestContent  string
 	OutboundRequestProtocol string
+	// [fork] response snapshots for detail diagnostics
+	OriginalResponseContent string
+	ResponseContent         string
 
 	// 统计指标
 	ActualModel string
@@ -42,11 +44,6 @@ func NewRelayMetrics(apiKeyID int, requestModel string, req *transformerModel.In
 		RequestModel:    requestModel,
 		StartTime:       time.Now(),
 		InternalRequest: req,
-	}
-	if req != nil {
-		if reqJSON, err := json.Marshal(req); err == nil {
-			metrics.InternalRequestContent = string(reqJSON)
-		}
 	}
 	return metrics
 }
@@ -90,6 +87,12 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 func (m *RelayMetrics) SetOutboundRequest(content string, protocol string) {
 	m.OutboundRequestContent = content
 	m.OutboundRequestProtocol = protocol
+}
+
+// [fork] keep the raw upstream response body and the converted client-visible body separate.
+func (m *RelayMetrics) SetResponseSnapshots(originalContent string, convertedContent string) {
+	m.OriginalResponseContent = originalContent
+	m.ResponseContent = convertedContent
 }
 
 func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attempts []model.ChannelAttempt) {
@@ -222,12 +225,17 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		relayLog.OriginalRequestContent = string(m.InternalRequest.RawRequest)
 		relayLog.OriginalRequestProtocol = relayProtocolNameFromAPIFormat(m.InternalRequest.RawAPIFormat)
 	}
-	relayLog.RequestContent = m.InternalRequestContent
+	// [fork] do not persist the internal request body; keep the legacy field empty for new logs.
+	relayLog.RequestContent = ""
 	relayLog.OutboundRequestContent = m.OutboundRequestContent
 	relayLog.OutboundRequestProtocol = m.OutboundRequestProtocol
+	// [fork] raw upstream response body before protocol conversion
+	relayLog.OriginalResponseContent = m.OriginalResponseContent
 
 	// 响应内容
-	if m.InternalResponse != nil {
+	if m.ResponseContent != "" {
+		relayLog.ResponseContent = m.ResponseContent
+	} else if m.InternalResponse != nil {
 		respForLog := m.filterResponseForLog(m.InternalResponse)
 		if respJSON, jsonErr := json.Marshal(respForLog); jsonErr == nil {
 			if m.InternalResponse.Usage != nil && m.InternalResponse.Usage.AnthropicUsage {

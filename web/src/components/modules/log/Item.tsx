@@ -13,6 +13,7 @@ import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
+import { type LogRequestSectionKey, type LogResponseSectionKey, useLogDetailStore } from './detail-store';
 import {
     MorphingDialog,
     MorphingDialogTrigger,
@@ -24,6 +25,8 @@ import {
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/animate-ui/components/animate/tooltip';
+
+type LogContentSectionKey = LogRequestSectionKey | LogResponseSectionKey;
 
 function formatTime(timestamp: number): string {
     const date = new Date(timestamp * 1000);
@@ -46,8 +49,6 @@ interface RetryBadgeWithTooltipProps {
     brandColor: string;
     attempts: ChannelAttempt[];
 }
-
-type RequestSectionKey = 'original' | 'internal' | 'outbound';
 
 function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadgeWithTooltipProps) {
     const t = useTranslations('log.card');
@@ -220,7 +221,7 @@ function buildProtocolSectionTitle(prefix: string, protocol: string | undefined)
     return `${prefix}(${normalized})`;
 }
 
-function RequestContentSection({
+function LogContentSection({
     sectionValue,
     value,
     icon,
@@ -230,14 +231,14 @@ function RequestContentSection({
     isActive,
     onActivate,
 }: {
-    sectionValue: RequestSectionKey;
+    sectionValue: LogContentSectionKey;
     value: string | undefined;
     icon: ReactNode;
     title: string;
     parsedContent?: ParsedLogContent;
     fallbackText: string;
     isActive: boolean;
-    onActivate: (value: RequestSectionKey) => void;
+    onActivate: (value: LogContentSectionKey) => void;
 }) {
     return (
         <motion.div
@@ -288,8 +289,6 @@ function RequestContentPanel({
     originalRequestContent,
     originalRequestParsedContent,
     originalRequestTitle,
-    requestContent,
-    requestParsedContent,
     outboundRequestContent,
     outboundRequestParsedContent,
     outboundRequestTitle,
@@ -300,17 +299,17 @@ function RequestContentPanel({
     originalRequestContent: string | undefined;
     originalRequestParsedContent?: ParsedLogContent;
     originalRequestTitle: string;
-    requestContent: string | undefined;
-    requestParsedContent?: ParsedLogContent;
     outboundRequestContent: string | undefined;
     outboundRequestParsedContent?: ParsedLogContent;
     outboundRequestTitle: string;
 }) {
     const t = useTranslations('log.card');
-    const [activeRequestSection, setActiveRequestSection] = useState<RequestSectionKey | null>('original');
+    const activeRequestSection = useLogDetailStore((state) => state.activeRequestSection);
+    const setActiveRequestSection = useLogDetailStore((state) => state.setActiveRequestSection);
 
-    const handleActivate = (sectionValue: RequestSectionKey) => {
-        setActiveRequestSection((current) => current === sectionValue ? null : sectionValue);
+    const handleActivate = (sectionValue: LogRequestSectionKey) => {
+        const nextSection = activeRequestSection === sectionValue ? null : sectionValue;
+        setActiveRequestSection(nextSection);
     };
 
     return (
@@ -357,7 +356,7 @@ function RequestContentPanel({
                             className="h-full p-3 md:p-4"
                         >
                             <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-                                <RequestContentSection
+                                <LogContentSection
                                     sectionValue="original"
                                     value={originalRequestContent}
                                     parsedContent={originalRequestParsedContent}
@@ -367,23 +366,112 @@ function RequestContentPanel({
                                     onActivate={handleActivate}
                                     icon={<ArrowDownToLine className="size-4 text-sky-500 shrink-0" />}
                                 />
-                                <RequestContentSection
-                                    sectionValue="internal"
-                                    value={requestContent}
-                                    parsedContent={requestParsedContent}
-                                    title={t('internalRequest')}
-                                    fallbackText={t('noRequestContent')}
-                                    isActive={activeRequestSection === 'internal'}
-                                    onActivate={handleActivate}
-                                    icon={<Cpu className="size-4 text-amber-500 shrink-0" />}
-                                />
-                                <RequestContentSection
+                                <LogContentSection
                                     sectionValue="outbound"
                                     value={outboundRequestContent}
                                     parsedContent={outboundRequestParsedContent}
                                     title={outboundRequestTitle}
                                     fallbackText={t('noRequestContent')}
                                     isActive={activeRequestSection === 'outbound'}
+                                    onActivate={handleActivate}
+                                    icon={<ArrowUpFromLine className="size-4 text-emerald-500 shrink-0" />}
+                                />
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        </div>
+    );
+}
+
+function ResponseContentPanel({
+    outputTokens,
+    isDetailLoading,
+    isDetailLoadFailed,
+    originalResponseContent,
+    originalResponseParsedContent,
+    responseContent,
+    responseParsedContent,
+}: {
+    outputTokens: number;
+    isDetailLoading: boolean;
+    isDetailLoadFailed: boolean;
+    originalResponseContent: string | undefined;
+    originalResponseParsedContent?: ParsedLogContent;
+    responseContent: string | undefined;
+    responseParsedContent?: ParsedLogContent;
+}) {
+    const t = useTranslations('log.card');
+    const activeResponseSection = useLogDetailStore((state) => state.activeResponseSection);
+    const setActiveResponseSection = useLogDetailStore((state) => state.setActiveResponseSection);
+
+    const handleActivate = (sectionValue: LogResponseSectionKey) => {
+        const nextSection = activeResponseSection === sectionValue ? null : sectionValue;
+        setActiveResponseSection(nextSection);
+    };
+
+    return (
+        <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
+            <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
+                <MessageSquare className="size-4 text-purple-500" />
+                <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
+                <Badge variant="secondary" className="ml-auto text-xs">
+                    {outputTokens.toLocaleString()} {t('tokens')}
+                </Badge>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden">
+                <AnimatePresence initial={false} mode="sync">
+                    {isDetailLoading ? (
+                        <motion.div
+                            key="response-loading"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.15 }}
+                            className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2"
+                        >
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>{t('loadingDetail')}</span>
+                        </motion.div>
+                    ) : isDetailLoadFailed ? (
+                        <motion.pre
+                            key="response-failed"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed"
+                        >
+                            {t('detailLoadFailed')}
+                        </motion.pre>
+                    ) : (
+                        <motion.div
+                            key="response-content"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="h-full p-3 md:p-4"
+                        >
+                            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+                                <LogContentSection
+                                    sectionValue="original"
+                                    value={originalResponseContent}
+                                    parsedContent={originalResponseParsedContent}
+                                    title={t('originalResponseLabel')}
+                                    fallbackText={t('noResponseContent')}
+                                    isActive={activeResponseSection === 'original'}
+                                    onActivate={handleActivate}
+                                    icon={<ArrowDownToLine className="size-4 text-sky-500 shrink-0" />}
+                                />
+                                <LogContentSection
+                                    sectionValue="outbound"
+                                    value={responseContent}
+                                    parsedContent={responseParsedContent}
+                                    title={t('outboundResponseLabel')}
+                                    fallbackText={t('noResponseContent')}
+                                    isActive={activeResponseSection === 'outbound'}
                                     onActivate={handleActivate}
                                     icon={<ArrowUpFromLine className="size-4 text-emerald-500 shrink-0" />}
                                 />
@@ -404,14 +492,14 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
     const detailQuery = useLogDetail({ id: log.id, scope, enabled: shouldFetchDetail });
 
     const originalRequestContent = detailQuery.data?.original_request_content ?? log.original_request_content;
-    const requestContent = detailQuery.data?.request_content ?? log.request_content;
     const outboundRequestContent = detailQuery.data?.outbound_request_content ?? log.outbound_request_content;
+    const originalResponseContent = detailQuery.data?.original_response_content ?? log.original_response_content;
     const responseContent = detailQuery.data?.response_content ?? log.response_content;
     const originalRequestProtocol = detailQuery.data?.original_request_protocol ?? log.original_request_protocol;
     const outboundRequestProtocol = detailQuery.data?.outbound_request_protocol ?? log.outbound_request_protocol;
     const originalRequestParsedContent = detailQuery.data?.parsed_original_request_content ?? log.parsed_original_request_content;
-    const requestParsedContent = detailQuery.data?.parsed_request_content ?? log.parsed_request_content;
     const outboundRequestParsedContent = detailQuery.data?.parsed_outbound_request_content ?? log.parsed_outbound_request_content;
+    const originalResponseParsedContent = detailQuery.data?.parsed_original_response_content ?? log.parsed_original_response_content;
     const responseParsedContent = detailQuery.data?.parsed_response_content ?? log.parsed_response_content;
     const isDetailLoading = shouldFetchDetail && detailQuery.isLoading && !detailQuery.data;
     const isDetailLoadFailed = shouldFetchDetail && !detailQuery.data && !!detailQuery.error;
@@ -437,64 +525,19 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
                     originalRequestContent={originalRequestContent}
                     originalRequestParsedContent={originalRequestParsedContent}
                     originalRequestTitle={originalRequestTitle}
-                    requestContent={requestContent}
-                    requestParsedContent={requestParsedContent}
                     outboundRequestContent={outboundRequestContent}
                     outboundRequestParsedContent={outboundRequestParsedContent}
                     outboundRequestTitle={outboundRequestTitle}
                 />
-                <div className="flex flex-col rounded-2xl border border-border bg-muted/30 overflow-hidden min-h-0">
-                    <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-border bg-muted/50 shrink-0">
-                        <MessageSquare className="size-4 text-purple-500" />
-                        <span className="text-sm font-medium text-card-foreground">{t('responseContent')}</span>
-                        <Badge variant="secondary" className="ml-auto text-xs">
-                            {log.output_tokens.toLocaleString()} {t('tokens')}
-                        </Badge>
-                    </div>
-                    <div className="flex-1 overflow-auto min-h-0">
-                        <AnimatePresence initial={false} mode="sync">
-                            {isDetailLoading ? (
-                                <motion.div
-                                    key={`response-loading-${log.id}`}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="h-full p-4 text-xs text-muted-foreground flex items-center justify-center gap-2"
-                                >
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    <span>{t('loadingDetail')}</span>
-                                </motion.div>
-                            ) : isDetailLoadFailed ? (
-                                <motion.pre
-                                    key={`response-failed-${log.id}`}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="p-4 text-xs text-destructive whitespace-pre-wrap wrap-break-word leading-relaxed"
-                                >
-                                    {t('detailLoadFailed')}
-                                </motion.pre>
-                            ) : (
-                                <motion.div
-                                    key={`response-content-${log.id}`}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="h-full"
-                                >
-                                    <DeferredJsonContent
-                                        content={responseContent}
-                                        parsedContent={responseParsedContent}
-                                        fallbackText={t('noResponseContent')}
-                                    />
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-                </div>
+                <ResponseContentPanel
+                    outputTokens={log.output_tokens}
+                    isDetailLoading={isDetailLoading}
+                    isDetailLoadFailed={isDetailLoadFailed}
+                    originalResponseContent={originalResponseContent}
+                    originalResponseParsedContent={originalResponseParsedContent}
+                    responseContent={responseContent}
+                    responseParsedContent={responseParsedContent}
+                />
             </div>
         </div>
     );

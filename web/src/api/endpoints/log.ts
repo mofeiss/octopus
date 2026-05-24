@@ -55,6 +55,7 @@ export interface RelayLog {
     original_request_protocol?: string;  // 原始请求协议
     outbound_request_content: string;    // 出站请求内容
     outbound_request_protocol?: string;  // 出站请求协议
+    original_response_content: string;   // 原始上游响应内容
     response_content: string;    // 响应内容
     error: string;               // 错误信息
     attempts?: ChannelAttempt[]; // 所有尝试记录
@@ -71,6 +72,7 @@ export interface RelayLog {
     parsed_original_request_content?: ParsedLogContent;
     parsed_request_content?: ParsedLogContent;
     parsed_outbound_request_content?: ParsedLogContent;
+    parsed_original_response_content?: ParsedLogContent;
     parsed_response_content?: ParsedLogContent;
 }
 
@@ -116,6 +118,9 @@ export function hydrateLogDetail(detail: RelayLog): RelayLog {
     }
     if (detail.outbound_request_content && !detail.parsed_outbound_request_content) {
         hydrated.parsed_outbound_request_content = parseLogContent(detail.outbound_request_content);
+    }
+    if (detail.original_response_content && !detail.parsed_original_response_content) {
+        hydrated.parsed_original_response_content = parseLogContent(detail.original_response_content);
     }
     if (detail.response_content && !detail.parsed_response_content) {
         hydrated.parsed_response_content = parseLogContent(detail.response_content);
