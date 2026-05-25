@@ -16,10 +16,17 @@ export enum GroupChannelCheckTaskMode {
 }
 
 export enum GroupChannelCheckItemStatus {
+    Queued = 'queued',
     Pending = 'pending',
     Running = 'running',
     Success = 'success',
     Failed = 'failed',
+}
+
+export enum GroupChannelCheckProtocol {
+    OpenAIChat = 'openai_chat',
+    OpenAIResponse = 'openai_response',
+    Anthropic = 'anthropic',
 }
 
 export interface GroupChannelCheckTaskItem {
@@ -98,6 +105,12 @@ export interface GroupChannelCheckCreateRequest {
     model_name?: string;
 }
 
+export interface GroupChannelCheckSendRequest {
+    task_id: number;
+    item_id?: number;
+    protocol: GroupChannelCheckProtocol;
+}
+
 export const groupChannelCheckLatestQueryKey = ['group-channel-check', 'latest'] as const;
 export const groupChannelCheckDetailQueryKey = (taskId: number) => ['group-channel-check', 'detail', taskId] as const;
 
@@ -119,6 +132,24 @@ export function useCreateGroupChannelCheckTask() {
         },
         onError: (error) => {
             logger.error('渠道测活任务创建失败:', error);
+        },
+    });
+}
+
+export function useSendGroupChannelCheckTask() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: GroupChannelCheckSendRequest) => {
+            return apiClient.post<GroupChannelCheckTask>('/api/v1/group/channel-check/send', data);
+        },
+        onSuccess: (task) => {
+            logger.log('渠道测活任务发送成功:', task);
+            queryClient.setQueryData(groupChannelCheckDetailQueryKey(task.id), task);
+            queryClient.invalidateQueries({ queryKey: groupChannelCheckLatestQueryKey });
+        },
+        onError: (error) => {
+            logger.error('渠道测活任务发送失败:', error);
         },
     });
 }

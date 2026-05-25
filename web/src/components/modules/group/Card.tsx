@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Trash2, X, Pencil, Activity, Settings2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type Group, useDeleteGroup, useUpdateGroup, useEnableGroupItem } from '@/api/endpoints/group';
-import { type GroupChannelCheckTask, type GroupChannelCheckTaskItem, GroupChannelCheckTaskStatus, isGroupChannelCheckTaskActive, useCreateGroupChannelCheckTask } from '@/api/endpoints/group-channel-check';
+import { type GroupChannelCheckTask, type GroupChannelCheckTaskItem, GroupChannelCheckProtocol, GroupChannelCheckTaskStatus, isGroupChannelCheckTaskActive, useCreateGroupChannelCheckTask, useSendGroupChannelCheckTask } from '@/api/endpoints/group-channel-check';
 import { useModelChannelList } from '@/api/endpoints/model';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -25,6 +25,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -36,6 +37,13 @@ import {
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
 import { GroupChannelCheckDialog } from './ChannelCheckDialog';
+
+const GROUP_MODE_OPTIONS = [
+    GroupMode.Failover,
+    GroupMode.RoundRobin,
+    GroupMode.Random,
+    GroupMode.Weighted,
+] as const;
 
 function withTranslationFallback(translated: string, fallback: string, keys: string[]) {
     const normalized = translated.trim();
@@ -96,6 +104,7 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
     const deleteGroup = useDeleteGroup();
     const enableGroupItem = useEnableGroupItem(); // [fork]
     const createChannelCheckTask = useCreateGroupChannelCheckTask(); // [fork] 渠道测活
+    const sendChannelCheckTask = useSendGroupChannelCheckTask(); // [fork] 手动发送测活
     const { data: modelChannels = [] } = useModelChannelList();
 
     const [confirmDelete, setConfirmDelete] = useState(false);
@@ -183,6 +192,12 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
             'auto_health_check_fail_threshold' in v ||
             'auto_health_check_next_run_at' in v;
     })();
+    const handleModeSelect = useCallback((value: string) => {
+        if (isUpdatingMode || !group.id) return;
+        const nextMode = Number(value) as GroupMode;
+        if (nextMode === group.mode) return;
+        updateGroup.mutate({ id: group.id, mode: nextMode }, { onSuccess, onError });
+    }, [group.id, group.mode, isUpdatingMode, onError, onSuccess, updateGroup]);
 
     const priorityByItemId = useMemo(() => {
         const map = new Map<number, number>();
@@ -376,6 +391,8 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
 
     const handleCreateSingleChannelCheck = useCallback((member: SelectedMember) => {
         if (!group.id) return;
+        setChannelCheckOpen(true);
+        setSelectedChannelCheckTaskId(null);
         createChannelCheckTask.mutate(
             {
                 group_id: group.id,
@@ -384,7 +401,8 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                 model_name: member.name,
             },
             {
-                onSuccess: () => {
+                onSuccess: (task) => {
+                    setSelectedChannelCheckTaskId(task.id);
                     toast.success(withTranslationFallback(
                         t('healthCheck.toast.created'),
                         '已加入测活队列',
@@ -392,6 +410,7 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                     ));
                 },
                 onError: (error) => {
+                    setChannelCheckOpen(false);
                     toast.error(
                         withTranslationFallback(
                             t('healthCheck.toast.createFailed'),
@@ -405,14 +424,13 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
         );
     }, [createChannelCheckTask, group.id, t]);
 
-    const handleRetrySelectedChannelCheck = useCallback((item: GroupChannelCheckTaskItem) => {
-        if (!group.id) return;
-        createChannelCheckTask.mutate(
+    const handleSendSelectedChannelCheck = useCallback((item: GroupChannelCheckTaskItem, protocol: GroupChannelCheckProtocol) => {
+        if (!selectedChannelCheckTaskId) return;
+        sendChannelCheckTask.mutate(
             {
-                group_id: group.id,
-                group_item_id: item.group_item_id,
-                channel_id: item.channel_id,
-                model_name: item.model_name,
+                task_id: selectedChannelCheckTaskId,
+                item_id: item.id,
+                protocol,
             },
             {
                 onSuccess: (task) => {
@@ -436,7 +454,7 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                 },
             }
         );
-    }, [createChannelCheckTask, group.id, t]);
+    }, [selectedChannelCheckTaskId, sendChannelCheckTask, t]);
 
     const handleOpenAutoHealthCheckConfig = useCallback(() => {
         setAutoHealthCheckInterval(String(group.auto_health_check_interval_minutes || 30));
@@ -691,36 +709,29 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                                     disabled={!group.id}
                                     className="size-6 rounded-lg"
                                 >
-                                        <Settings2 className="size-3.5" />
+                                    <Settings2 className="size-3.5" />
                                 </Button>
                             </div>
                         </TooltipTrigger>
                         <TooltipContent>{autoHealthCheckSummary}</TooltipContent>
                     </Tooltip>
-                </div>
 
-                {/* Mode: quick switch (no need to enter Edit) */}
-                <div className="flex gap-1 mb-3">
-                    {([GroupMode.RoundRobin, GroupMode.Random, GroupMode.Failover, GroupMode.Weighted] as const).map((m) => (
-                        <button
-                            key={m}
-                            type="button"
-                            aria-disabled={isUpdatingMode || !group.id}
-                            onClick={() => {
-                                if (isUpdatingMode || !group.id) return;
-                                if (m === group.mode) return;
-                                updateGroup.mutate({ id: group.id!, mode: m }, { onSuccess, onError });
-                            }}
-                            className={cn(
-                                'flex-1 py-1 text-xs rounded-lg transition-colors',
-                                group.mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80',
-                                // Keep visuals stable (no opacity/disabled flicker) while still preventing double-submit via onClick guard.
-                                (!group.id) && 'cursor-not-allowed opacity-50'
-                            )}
-                        >
-                            {t(`mode.${MODE_LABELS[m]}`)}
-                        </button>
-                    ))}
+                    <Select
+                        value={String(group.mode)}
+                        onValueChange={handleModeSelect}
+                        disabled={isUpdatingMode || !group.id}
+                    >
+                        <SelectTrigger className="h-8 w-[7.75rem] shrink-0 rounded-xl px-2.5 text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {GROUP_MODE_OPTIONS.map((mode) => (
+                                <SelectItem key={mode} value={String(mode)}>
+                                    {t(`mode.${MODE_LABELS[mode]}`)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
 
                 <section className="rounded-xl border border-border/50 bg-muted/30 overflow-hidden relative flex-1 min-h-20">
@@ -817,8 +828,8 @@ export function GroupCard({ group, latestChannelCheckTask }: { group: Group; lat
                 creating={createChannelCheckTask.isPending && !selectedChannelCheckTaskId}
                 onRetry={handleRetryBatchChannelCheck}
                 retrying={createChannelCheckTask.isPending}
-                onRetrySelected={handleRetrySelectedChannelCheck}
-                retryingSelected={createChannelCheckTask.isPending}
+                onRetrySelected={handleSendSelectedChannelCheck}
+                retryingSelected={sendChannelCheckTask.isPending}
             />
         </>
     );

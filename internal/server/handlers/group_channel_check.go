@@ -23,6 +23,10 @@ func init() {
 				Handle(createGroupChannelCheckTask),
 		).
 		AddRoute(
+			router.NewRoute("/send", http.MethodPost).
+				Handle(sendGroupChannelCheckTask),
+		).
+		AddRoute(
 			router.NewRoute("/sync-status/:id", http.MethodPost).
 				Handle(syncGroupChannelCheckTaskStatus),
 		)
@@ -62,12 +66,31 @@ func createGroupChannelCheckTask(c *gin.Context) {
 		return
 	}
 
-	task, err := taskpkg.CreateOrAppendGroupChannelCheckTask(*group, items, mode, mode == model.GroupChannelCheckTaskModeSingle, c.Request.Context())
+	task, err := taskpkg.CreateOrAppendGroupChannelCheckTask(*group, items, mode, mode == model.GroupChannelCheckTaskModeSingle, false, "", c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	resp.Success(c, task)
+}
+
+func sendGroupChannelCheckTask(c *gin.Context) {
+	var req model.GroupChannelCheckSendRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !model.IsGroupChannelCheckProtocol(string(req.Protocol)) {
+		resp.Error(c, http.StatusBadRequest, "invalid protocol")
+		return
+	}
+
+	task, err := taskpkg.SendGroupChannelCheckTask(req.TaskID, req.ItemID, req.Protocol, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 	resp.Success(c, task)
 }
 

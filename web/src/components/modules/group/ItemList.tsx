@@ -22,7 +22,7 @@ export interface SelectedMember extends LLMChannel {
     weight?: number;
     item_enabled?: boolean; // [fork] GroupItem 级启用状态
     health_check_task_id?: number; // [fork] 最近一次测活任务 ID
-    health_check_status?: 'pending' | 'running' | 'success' | 'failed'; // [fork] 最近一次测活状态
+    health_check_status?: 'queued' | 'pending' | 'running' | 'success' | 'failed'; // [fork] 最近一次测活状态
     health_check_checked_at?: number; // [fork] 最近一次测活时间
     health_check_consecutive_failures?: number; // [fork] 连续失败计数
     health_check_response_status_code?: number; // [fork] 最近一次测活状态码
@@ -93,6 +93,8 @@ function MemberItem({
                 return t('healthCheck.memberStatus.success');
             case 'failed':
                 return t('healthCheck.memberStatus.failed');
+            case 'queued':
+                return t('healthCheck.memberStatus.queued');
             case 'running':
             case 'pending':
                 return t('healthCheck.memberStatus.running');

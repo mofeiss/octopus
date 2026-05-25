@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/bestruirui/octopus/internal/db"
@@ -44,7 +45,12 @@ func GroupGet(id int, ctx context.Context) (*model.Group, error) {
 }
 
 func GroupGetMap(name string, ctx context.Context) (model.Group, error) {
-	items, ok := groupMap.Get(name)
+	items, ok := groupMatchByRouteAliases(name)
+	if ok {
+		return items, nil
+	}
+
+	items, ok = groupMap.Get(name)
 	if !ok {
 		return model.Group{}, fmt.Errorf("group not found")
 	}
@@ -468,6 +474,71 @@ func parseRouteAliases(aliases string) []string {
 		}
 	}
 	return result
+}
+
+// [fork] 路由别名按三阶段匹配：精确大小写 -> 精确忽略大小写 -> 包含忽略大小写。
+func groupMatchByRouteAliases(name string) (model.Group, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return model.Group{}, false
+	}
+
+	candidates := groupRouteAliasCandidates()
+	for _, candidate := range candidates {
+		if candidate.alias == name {
+			return candidate.group, true
+		}
+	}
+
+	lowerName := strings.ToLower(name)
+	for _, candidate := range candidates {
+		if strings.ToLower(candidate.alias) == lowerName {
+			return candidate.group, true
+		}
+	}
+
+	for _, candidate := range candidates {
+		alias := strings.ToLower(strings.TrimSpace(candidate.alias))
+		if alias != "" && strings.Contains(lowerName, alias) {
+			return candidate.group, true
+		}
+	}
+
+	return model.Group{}, false
+}
+
+type groupRouteAliasCandidate struct {
+	group model.Group
+	alias string
+}
+
+func groupRouteAliasCandidates() []groupRouteAliasCandidate {
+	groups := make([]model.Group, 0, groupCache.Len())
+	for _, group := range groupCache.GetAll() {
+		groups = append(groups, group)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		left := groups[i].SortOrder
+		if left == 0 {
+			left = groups[i].ID
+		}
+		right := groups[j].SortOrder
+		if right == 0 {
+			right = groups[j].ID
+		}
+		if left != right {
+			return left < right
+		}
+		return groups[i].ID < groups[j].ID
+	})
+
+	candidates := make([]groupRouteAliasCandidate, 0, len(groups)*2)
+	for _, group := range groups {
+		for _, alias := range parseRouteAliases(group.RouteAliases) {
+			candidates = append(candidates, groupRouteAliasCandidate{group: group, alias: alias})
+		}
+	}
+	return candidates
 }
 
 // [fork] groupMapSetWithAliases sets groupMap entries for both group.Name and all RouteAliases.

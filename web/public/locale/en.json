@@ -339,6 +339,7 @@
         },
         "form": {
             "name": "Group Name",
+            "mode": "Dispatch Mode",
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Leave empty to use default fuzzy match by group name/route aliases",
             "matchRegexInvalid": "Invalid regex",
@@ -383,7 +384,7 @@
         "actions": {
             "batch": "Batch",
             "retry": "Check again",
-            "retrySelected": "Check again",
+            "retrySelected": "Send test",
             "retryAll": "Recheck all",
             "syncStatus": "Sync enabled state from this check",
             "syncStatusSuccess": "Synced: enabled {enabled}, disabled {disabled}, skipped {skipped}",
@@ -416,6 +417,7 @@
         },
         "memberStatus": {
             "idle": "Not checked yet",
+            "queued": "Queued",
             "running": "Checking",
             "success": "Last success",
             "failed": "Last failed"

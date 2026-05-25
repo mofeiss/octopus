@@ -66,6 +66,7 @@ func GroupChannelCheckTaskListRunnableIDs(ctx context.Context) ([]int64, error) 
 			model.GroupChannelCheckTaskStatusPending,
 			model.GroupChannelCheckTaskStatusRunning,
 		}).
+		Where("EXISTS (SELECT 1 FROM group_channel_check_task_items WHERE group_channel_check_task_items.task_id = group_channel_check_tasks.id AND group_channel_check_task_items.status = ?)", model.GroupChannelCheckItemStatusPending).
 		Order("created_at ASC, id ASC").
 		Pluck("id", &ids).Error; err != nil {
 		return nil, err
@@ -136,11 +137,14 @@ func GroupChannelCheckTaskRefreshSummary(taskID int64, ctx context.Context) (*mo
 
 	totalCount := len(items)
 	pendingCount := 0
+	queuedCount := 0 // [fork] 已加入窗口但尚未点击发送的测活项
 	runningCount := 0
 	successCount := 0
 	failedCount := 0
 	for _, item := range items {
 		switch item.Status {
+		case model.GroupChannelCheckItemStatusQueued:
+			queuedCount++
 		case model.GroupChannelCheckItemStatusPending:
 			pendingCount++
 		case model.GroupChannelCheckItemStatusRunning:
@@ -152,7 +156,7 @@ func GroupChannelCheckTaskRefreshSummary(taskID int64, ctx context.Context) (*mo
 		}
 	}
 
-	status := deriveGroupChannelCheckTaskStatus(totalCount, pendingCount, runningCount, successCount, failedCount)
+	status := deriveGroupChannelCheckTaskStatus(totalCount, queuedCount, pendingCount, runningCount, successCount, failedCount)
 	updates := map[string]any{
 		"total_count":   totalCount,
 		"pending_count": pendingCount,
@@ -186,16 +190,20 @@ func GroupChannelCheckTaskRefreshSummary(taskID int64, ctx context.Context) (*mo
 	return &task, nil
 }
 
-func deriveGroupChannelCheckTaskStatus(totalCount, pendingCount, runningCount, successCount, failedCount int) model.GroupChannelCheckTaskStatus {
+func deriveGroupChannelCheckTaskStatus(totalCount, queuedCount, pendingCount, runningCount, successCount, failedCount int) model.GroupChannelCheckTaskStatus {
 	switch {
 	case totalCount == 0:
 		return model.GroupChannelCheckTaskStatusFailed
 	case runningCount > 0:
 		return model.GroupChannelCheckTaskStatusRunning
+	case queuedCount == totalCount:
+		return model.GroupChannelCheckTaskStatusPending
 	case pendingCount == totalCount:
 		return model.GroupChannelCheckTaskStatusPending
 	case pendingCount > 0:
 		return model.GroupChannelCheckTaskStatusRunning
+	case queuedCount > 0 && successCount+failedCount+queuedCount == totalCount:
+		return model.GroupChannelCheckTaskStatusPending
 	case successCount == totalCount:
 		return model.GroupChannelCheckTaskStatusSuccess
 	case successCount > 0 && failedCount > 0:

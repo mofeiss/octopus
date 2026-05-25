@@ -8,14 +8,22 @@ import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupMode } from '@/api/endpoints/group';
+import { GroupMode } from '@/api/endpoints/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
+
+const GROUP_MODE_OPTIONS = [
+    GroupMode.Failover,
+    GroupMode.RoundRobin,
+    GroupMode.Random,
+    GroupMode.Weighted,
+] as const;
 
 export type GroupEditorValues = {
     name: string;
@@ -230,7 +238,7 @@ export function GroupEditor({
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [matchRegex, setMatchRegex] = useState(initial?.match_regex ?? '');
-    const [mode, setMode] = useState<GroupMode>((initial?.mode ?? 1) as GroupMode);
+    const [mode, setMode] = useState<GroupMode>((initial?.mode ?? GroupMode.Failover) as GroupMode);
     const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
     const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
     const [routeAliases, setRouteAliases] = useState(initial?.route_aliases ?? ''); // [fork]
@@ -466,22 +474,22 @@ export function GroupEditor({
                         </Field>
                     </div>
 
-                    {/* Mode */}
-                    <div className="flex gap-1">
-                        {([1, 2, 3, 4] as const).map((m) => (
-                            <button
-                                key={m}
-                                type="button"
-                                onClick={() => setMode(m)}
-                                className={cn(
-                                    'flex-1 py-1 text-xs rounded-lg transition-colors',
-                                    mode === m ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
-                                )}
-                            >
-                                {t(`mode.${MODE_LABELS[m]}`)}
-                            </button>
-                        ))}
-                    </div>
+                    {/* [fork] Mode */}
+                    <Field>
+                        <FieldLabel htmlFor="group-mode">{t('form.mode')}</FieldLabel>
+                        <Select value={String(mode)} onValueChange={(value) => setMode(Number(value) as GroupMode)}>
+                            <SelectTrigger id="group-mode" className="h-10 w-full rounded-xl">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {GROUP_MODE_OPTIONS.map((m) => (
+                                    <SelectItem key={m} value={String(m)}>
+                                        {t(`mode.${MODE_LABELS[m]}`)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </Field>
 
                     <div className="flex flex-col gap-4 min-h-0 md:flex-1">
                         <div className="grid min-h-0 grid-cols-1 gap-4 md:h-full md:grid-cols-2">

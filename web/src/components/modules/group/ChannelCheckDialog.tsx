@@ -8,6 +8,7 @@ import {
     type GroupChannelCheckAttempt,
     type GroupChannelCheckTaskItem,
     GroupChannelCheckItemStatus,
+    GroupChannelCheckProtocol,
     GroupChannelCheckTaskStatus,
     useSyncGroupChannelCheckTaskStatus,
     useGroupChannelCheckTaskDetail,
@@ -16,8 +17,15 @@ import { CopyIconButton } from '@/components/common/CopyButton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/common/Toast';
 import { cn } from '@/lib/utils';
+
+const CHECK_PROTOCOL_OPTIONS = [
+    { value: GroupChannelCheckProtocol.OpenAIChat, label: 'OPENAI CHAT' },
+    { value: GroupChannelCheckProtocol.OpenAIResponse, label: 'OPENAI RESPONSE' },
+    { value: GroupChannelCheckProtocol.Anthropic, label: 'ANTHROPIC' },
+] as const;
 
 function withTranslationFallback(translated: string, fallback: string, keys: string[]) {
     const normalized = translated.trim();
@@ -84,6 +92,14 @@ function getAttemptTone(status?: GroupChannelCheckItemStatus) {
                 accent: 'text-primary',
                 body: 'text-foreground',
             };
+        case GroupChannelCheckItemStatus.Queued:
+        case GroupChannelCheckItemStatus.Pending:
+            return {
+                card: 'border-amber-500/25 bg-amber-500/5',
+                divider: 'border-amber-500/20',
+                accent: 'text-amber-600',
+                body: 'text-foreground',
+            };
         default:
             return {
                 card: 'border-border/70 bg-background/60',
@@ -131,6 +147,7 @@ function StatusBadge({ status }: { status?: GroupChannelCheckTaskStatus | GroupC
     const text = (() => {
         switch (status) {
             case GroupChannelCheckTaskStatus.Pending:
+            case GroupChannelCheckItemStatus.Queued:
             case GroupChannelCheckItemStatus.Pending:
                 return withTranslationFallback(t('pending'), '待执行', ['group.healthCheck.status.pending', 'pending']);
             case GroupChannelCheckTaskStatus.Running:
@@ -162,6 +179,10 @@ function StatusBadge({ status }: { status?: GroupChannelCheckTaskStatus | GroupC
             case GroupChannelCheckTaskStatus.Running:
             case GroupChannelCheckItemStatus.Running:
                 return 'bg-primary/10 text-primary border-primary/20';
+            case GroupChannelCheckTaskStatus.Pending:
+            case GroupChannelCheckItemStatus.Queued:
+            case GroupChannelCheckItemStatus.Pending:
+                return 'bg-amber-500/10 text-amber-600 border-amber-500/20';
             default:
                 return 'bg-muted text-muted-foreground border-border';
         }
@@ -190,7 +211,7 @@ export function GroupChannelCheckDialog({
     creating?: boolean;
     onRetry?: () => void;
     retrying?: boolean;
-    onRetrySelected?: (item: GroupChannelCheckTaskItem) => void;
+    onRetrySelected?: (item: GroupChannelCheckTaskItem, protocol: GroupChannelCheckProtocol) => void;
     retryingSelected?: boolean;
 }) {
     const t = useTranslations('group.healthCheck');
@@ -199,6 +220,7 @@ export function GroupChannelCheckDialog({
     const task = taskQuery.data;
     const items = useMemo(() => task?.items ?? [], [task?.items]);
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+    const [selectedProtocol, setSelectedProtocol] = useState<GroupChannelCheckProtocol>(GroupChannelCheckProtocol.OpenAIChat);
 
     const effectiveSelectedItemId = useMemo(() => {
         if (items.length === 0) return null;
@@ -213,6 +235,7 @@ export function GroupChannelCheckDialog({
                 case GroupChannelCheckItemStatus.Running:
                     return 1;
                 case GroupChannelCheckItemStatus.Pending:
+                case GroupChannelCheckItemStatus.Queued:
                     return 2;
                 case GroupChannelCheckItemStatus.Failed:
                     return 3;
@@ -266,7 +289,7 @@ export function GroupChannelCheckDialog({
     );
     const retrySelectedText = withTranslationFallback(
         t('actions.retrySelected'),
-        '再测一次',
+        '发送测试',
         ['group.healthCheck.actions.retrySelected', 'actions.retrySelected']
     );
     const retryAllText = withTranslationFallback(
@@ -500,16 +523,33 @@ export function GroupChannelCheckDialog({
                                                         )}
                                                     </div>
                                                 </div>
-                                                <Button
-                                                    type="button"
-                                                    variant="secondary"
-                                                    onClick={() => onRetrySelected?.(selectedItem)}
-                                                    disabled={!onRetrySelected || retryingSelected}
-                                                    className="h-8 rounded-xl px-3 text-xs"
-                                                >
-                                                    {retryingSelected ? <Loader2 className="size-3.5 animate-spin" /> : <Activity className="size-3.5" />}
-                                                    {retrySelectedText}
-                                                </Button>
+                                                <div className="flex shrink-0 items-center gap-2">
+                                                    <Select
+                                                        value={selectedProtocol}
+                                                        onValueChange={(value) => setSelectedProtocol(value as GroupChannelCheckProtocol)}
+                                                    >
+                                                        <SelectTrigger className="h-8 w-[10.75rem] rounded-xl px-2.5 text-xs">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {CHECK_PROTOCOL_OPTIONS.map((option) => (
+                                                                <SelectItem key={option.value} value={option.value}>
+                                                                    {option.label}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <Button
+                                                        type="button"
+                                                        variant="secondary"
+                                                        onClick={() => onRetrySelected?.(selectedItem, selectedProtocol)}
+                                                        disabled={!onRetrySelected || retryingSelected}
+                                                        className="h-8 rounded-xl px-3 text-xs"
+                                                    >
+                                                        {retryingSelected ? <Loader2 className="size-3.5 animate-spin" /> : <Activity className="size-3.5" />}
+                                                        {retrySelectedText}
+                                                    </Button>
+                                                </div>
                                             </div>
 
                                             <div className="mt-3 space-y-2 border-t border-border/70 pt-3 text-xs">

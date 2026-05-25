@@ -14,7 +14,7 @@ export interface GroupItem {
     weight: number;
     enabled?: boolean; // [fork] item 级启用开关
     health_check_task_id?: number; // [fork] 最近一次测活任务 ID
-    health_check_status?: 'pending' | 'running' | 'success' | 'failed'; // [fork] 最近一次测活状态
+    health_check_status?: 'queued' | 'pending' | 'running' | 'success' | 'failed'; // [fork] 最近一次测活状态
     health_check_checked_at?: number; // [fork] 最近一次测活完成时间
     health_check_consecutive_failures?: number; // [fork] 独立连续失败计数
     health_check_response_status_code?: number; // [fork] 最近一次测活状态码

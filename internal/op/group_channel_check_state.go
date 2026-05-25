@@ -103,6 +103,76 @@ func GroupChannelCheckTaskListPendingItems(taskID int64, ctx context.Context) ([
 	return items, nil
 }
 
+// [fork] 手动测活：创建时只展示在队列中，点击发送后才写入协议并进入 worker。
+func GroupChannelCheckTaskMarkQueuedForSend(taskID int64, itemID int64, protocol model.GroupChannelCheckProtocol, ctx context.Context) error {
+	return groupChannelCheckTaskMarkForSend(taskID, itemID, protocol, true, ctx)
+}
+
+// [fork] 自动测活追加到活跃任务时，只推进尚未发送的队列项，避免重置已完成结果。
+func GroupChannelCheckTaskMarkQueuedPendingForSend(taskID int64, protocol model.GroupChannelCheckProtocol, ctx context.Context) error {
+	return groupChannelCheckTaskMarkForSend(taskID, 0, protocol, false, ctx)
+}
+
+func groupChannelCheckTaskMarkForSend(taskID int64, itemID int64, protocol model.GroupChannelCheckProtocol, includeCompleted bool, ctx context.Context) error {
+	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task model.GroupChannelCheckTask
+		if err := tx.First(&task, "id = ?", taskID).Error; err != nil {
+			return err
+		}
+		if task.Status != model.GroupChannelCheckTaskStatusPending && task.Status != model.GroupChannelCheckTaskStatusRunning {
+			return fmt.Errorf("task is not active")
+		}
+
+		statuses := []model.GroupChannelCheckItemStatus{
+			model.GroupChannelCheckItemStatusQueued,
+			model.GroupChannelCheckItemStatusPending,
+		}
+		if includeCompleted {
+			statuses = append(statuses,
+				model.GroupChannelCheckItemStatusFailed,
+				model.GroupChannelCheckItemStatusSuccess,
+			)
+		}
+		query := tx.Model(&model.GroupChannelCheckTaskItem{}).
+			Where("task_id = ? AND status IN ?", taskID, statuses)
+		if itemID > 0 {
+			query = query.Where("id = ?", itemID)
+		}
+
+		if err := query.Updates(map[string]any{
+			"status":                 model.GroupChannelCheckItemStatusPending,
+			"request_kind":           string(protocol),
+			"started_at":             int64(0),
+			"finished_at":            int64(0),
+			"error":                  "",
+			"response_status_code":   0,
+			"duration_ms":            0,
+			"request_content":        "",
+			"openai_request_curl":    "",
+			"anthropic_request_curl": "",
+			"response_preview":       "",
+			"response_content":       "",
+			"attempts":               nil,
+		}).Error; err != nil {
+			return err
+		}
+
+		if itemID > 0 {
+			var count int64
+			if err := tx.Model(&model.GroupChannelCheckTaskItem{}).
+				Where("task_id = ? AND id = ?", taskID, itemID).
+				Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return gorm.ErrRecordNotFound
+			}
+		}
+
+		return nil
+	})
+}
+
 func GroupChannelCheckTaskAppendItems(
 	taskID int64,
 	group model.Group,
@@ -160,7 +230,7 @@ func GroupChannelCheckTaskAppendItems(
 				ChannelName: channelNameByID[item.ChannelID],
 				ChannelType: channelTypeByID[item.ChannelID],
 				ModelName:   item.ModelName,
-				Status:      model.GroupChannelCheckItemStatusPending,
+				Status:      model.GroupChannelCheckItemStatusQueued,
 			})
 		}
 

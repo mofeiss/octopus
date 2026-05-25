@@ -20,11 +20,30 @@ const (
 type GroupChannelCheckItemStatus string
 
 const (
+	GroupChannelCheckItemStatusQueued  GroupChannelCheckItemStatus = "queued"
 	GroupChannelCheckItemStatusPending GroupChannelCheckItemStatus = "pending"
 	GroupChannelCheckItemStatusRunning GroupChannelCheckItemStatus = "running"
 	GroupChannelCheckItemStatusSuccess GroupChannelCheckItemStatus = "success"
 	GroupChannelCheckItemStatusFailed  GroupChannelCheckItemStatus = "failed"
 )
+
+// [fork] 手动测活发送协议。创建任务只加入队列，点击发送时才写入该协议并执行。
+type GroupChannelCheckProtocol string
+
+const (
+	GroupChannelCheckProtocolOpenAIChat     GroupChannelCheckProtocol = "openai_chat"
+	GroupChannelCheckProtocolOpenAIResponse GroupChannelCheckProtocol = "openai_response"
+	GroupChannelCheckProtocolAnthropic      GroupChannelCheckProtocol = "anthropic"
+)
+
+func IsGroupChannelCheckProtocol(value string) bool {
+	switch GroupChannelCheckProtocol(value) {
+	case GroupChannelCheckProtocolOpenAIChat, GroupChannelCheckProtocolOpenAIResponse, GroupChannelCheckProtocolAnthropic:
+		return true
+	default:
+		return false
+	}
+}
 
 type GroupChannelCheckTask struct {
 	ID           int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
@@ -100,6 +119,12 @@ type GroupChannelCheckCreateRequest struct {
 	GroupItemID int    `json:"group_item_id,omitempty"`
 	ChannelID   int    `json:"channel_id,omitempty"`
 	ModelName   string `json:"model_name,omitempty"`
+}
+
+type GroupChannelCheckSendRequest struct {
+	TaskID   int64                     `json:"task_id" binding:"required"`
+	ItemID   int64                     `json:"item_id,omitempty"`
+	Protocol GroupChannelCheckProtocol `json:"protocol" binding:"required"`
 }
 
 type GroupChannelCheckState struct {

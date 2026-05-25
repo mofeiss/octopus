@@ -339,6 +339,7 @@
     },
     "form": {
       "name": "分组名称",
+      "mode": "调度模式",
       "matchRegex": "匹配正则",
       "matchRegexPlaceholder": "留空则默认按分组名称/路由别名模糊匹配",
       "matchRegexInvalid": "正则无效",
@@ -383,7 +384,7 @@
       "actions": {
         "batch": "批量测活",
         "retry": "再测一次",
-        "retrySelected": "再测一次",
+        "retrySelected": "发送测试",
         "retryAll": "全部重测",
         "syncStatus": "按测活结果同步启用状态",
         "syncStatusSuccess": "已同步：启用 {enabled} 个，禁用 {disabled} 个，跳过 {skipped} 个",
@@ -416,6 +417,7 @@
       },
       "memberStatus": {
         "idle": "未测活",
+        "queued": "待发送",
         "running": "测活中",
         "success": "最近成功",
         "failed": "最近失败"
