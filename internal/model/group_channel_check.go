@@ -91,8 +91,8 @@ type GroupChannelCheckTaskItem struct {
 	ResponseStatusCode   int                         `json:"response_status_code"`
 	DurationMs           int                         `json:"duration_ms"`
 	RequestContent       string                      `json:"request_content"`
-	OpenAIRequestCurl    string                      `json:"openai_request_curl"`    // [fork] OpenAI 兼容 curl
-	AnthropicRequestCurl string                      `json:"anthropic_request_curl"` // [fork] Anthropic 兼容 curl
+	OpenAIRequestCurl    string                      `json:"openai_request_curl" gorm:"column:openai_request_curl"`       // [fork] OpenAI 兼容 curl
+	AnthropicRequestCurl string                      `json:"anthropic_request_curl" gorm:"column:anthropic_request_curl"` // [fork] Anthropic 兼容 curl
 	ResponsePreview      string                      `json:"response_preview"`
 	ResponseContent      string                      `json:"response_content"`
 	Error                string                      `json:"error"`
