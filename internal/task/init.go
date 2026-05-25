@@ -38,8 +38,6 @@ func Init() {
 
 	// 注册基础URL延迟任务
 	Register(TaskBaseUrlDelay, 1*time.Hour, true, ChannelBaseUrlDelayTask)
-	// [fork] 注册分组自动测活调度任务
-	Register(TaskGroupAutoHealthCheck, 1*time.Minute, true, RunAutoGroupChannelChecks)
 
 	// 注册LLM同步任务
 	syncLLMIntervalHours, err := op.SettingGetInt(model.SettingKeySyncLLMInterval)

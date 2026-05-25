@@ -27,6 +27,10 @@ func init() {
 				Handle(sendGroupChannelCheckTask),
 		).
 		AddRoute(
+			router.NewRoute("/probe", http.MethodPost).
+				Handle(probeGroupChannelCheck),
+		).
+		AddRoute(
 			router.NewRoute("/sync-status/:id", http.MethodPost).
 				Handle(syncGroupChannelCheckTaskStatus),
 		)
@@ -92,6 +96,25 @@ func sendGroupChannelCheckTask(c *gin.Context) {
 		return
 	}
 	resp.Success(c, task)
+}
+
+func probeGroupChannelCheck(c *gin.Context) {
+	var req model.GroupChannelCheckProbeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !model.IsGroupChannelCheckProtocol(string(req.Protocol)) {
+		resp.Error(c, http.StatusBadRequest, "invalid protocol")
+		return
+	}
+
+	item, err := taskpkg.ProbeGroupChannelCheck(req, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp.Success(c, item)
 }
 
 func listLatestGroupChannelCheckTasks(c *gin.Context) {

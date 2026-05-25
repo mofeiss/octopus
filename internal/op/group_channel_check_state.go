@@ -260,6 +260,15 @@ func GroupChannelCheckTaskAppendItems(
 }
 
 func GroupChannelCheckStateUpsertByItem(group model.Group, item model.GroupChannelCheckTaskItem, ctx context.Context) error {
+	return groupChannelCheckStateUpsertByItem(group, item, true, ctx)
+}
+
+// [fork] 手动测活只记录最近结果，不联动启停渠道。
+func GroupChannelCheckStateRecordManualResult(group model.Group, item model.GroupChannelCheckTaskItem, ctx context.Context) error {
+	return groupChannelCheckStateUpsertByItem(group, item, false, ctx)
+}
+
+func groupChannelCheckStateUpsertByItem(group model.Group, item model.GroupChannelCheckTaskItem, syncEnabled bool, ctx context.Context) error {
 	if item.GroupItemID <= 0 {
 		return nil
 	}
@@ -312,6 +321,10 @@ func GroupChannelCheckStateUpsertByItem(group model.Group, item model.GroupChann
 		DoUpdates: clause.AssignmentColumns([]string{"group_id", "channel_id", "model_name", "task_id", "status", "checked_at", "success_at", "failed_at", "consecutive_failures", "response_status_code", "duration_ms", "error"}),
 	}).Create(&state).Error; err != nil {
 		return err
+	}
+
+	if !syncEnabled {
+		return groupRefreshCacheByID(group.ID, ctx)
 	}
 
 	desiredEnabled := determineGroupItemEnabledByHealthCheck(group, state)

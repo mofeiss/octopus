@@ -370,6 +370,76 @@ func processGroupChannelCheckTaskItem(task *model.GroupChannelCheckTask, item *m
 	return result.err
 }
 
+// [fork] 单次手动测活，不创建任务、不入队、不依赖 task active 状态。
+func ProbeGroupChannelCheck(req model.GroupChannelCheckProbeRequest, ctx context.Context) (*model.GroupChannelCheckTaskItem, error) {
+	if !model.IsGroupChannelCheckProtocol(string(req.Protocol)) {
+		return nil, fmt.Errorf("invalid protocol")
+	}
+	group, err := op.GroupGet(req.GroupID, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	groupItemID := req.GroupItemID
+	channelName := "Unknown Channel"
+	channelType := -1
+	if channel, err := op.ChannelGet(req.ChannelID, ctx); err == nil {
+		channelName = channel.Name
+		channelType = int(channel.Type)
+	}
+	if groupItemID <= 0 {
+		for _, item := range group.Items {
+			if item.ChannelID == req.ChannelID && item.ModelName == req.ModelName {
+				groupItemID = item.ID
+				break
+			}
+		}
+	}
+
+	startedAt := time.Now().Unix()
+	result := probeGroupChannelCheckItem(req.ChannelID, req.ModelName, req.Protocol)
+	finishedAt := time.Now().Unix()
+	item := model.GroupChannelCheckTaskItem{
+		ID:                   snowflake.GenerateID(),
+		GroupID:              group.ID,
+		GroupItemID:          groupItemID,
+		ChannelID:            req.ChannelID,
+		ChannelName:          channelName,
+		ChannelType:          channelType,
+		ModelName:            req.ModelName,
+		RequestKind:          result.requestKind,
+		RequestURL:           result.requestURL,
+		BaseURL:              result.baseURL,
+		ChannelKeyID:         result.channelKeyID,
+		ChannelKeyIndex:      result.channelKeyIndex,
+		ChannelKeyPreview:    result.channelKeyPreview,
+		ChannelKeyRemark:     result.channelKeyRemark,
+		ResponseStatusCode:   result.responseStatusCode,
+		DurationMs:           result.durationMs,
+		RequestContent:       result.requestContent,
+		OpenAIRequestCurl:    result.openAIRequestCurl,
+		AnthropicRequestCurl: result.anthropicRequestCurl,
+		ResponsePreview:      result.responsePreview,
+		ResponseContent:      result.responseContent,
+		StartedAt:            startedAt,
+		FinishedAt:           finishedAt,
+		Attempts:             result.attempts,
+	}
+	if result.err != nil {
+		item.Status = model.GroupChannelCheckItemStatusFailed
+		item.Error = result.err.Error()
+	} else {
+		item.Status = model.GroupChannelCheckItemStatusSuccess
+	}
+
+	if groupItemID > 0 {
+		if err := op.GroupChannelCheckStateRecordManualResult(*group, item, ctx); err != nil {
+			log.Warnf("failed to record manual group channel check state (group_item=%d): %v", groupItemID, err)
+		}
+	}
+	return &item, nil
+}
+
 func probeGroupChannelCheckItem(channelID int, modelName string, protocol model.GroupChannelCheckProtocol) (result groupChannelCheckProbeResult) {
 	startTime := time.Now()
 	defer func() {

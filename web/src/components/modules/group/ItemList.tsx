@@ -36,9 +36,6 @@ function getHealthCheckDotClass(status?: SelectedMember['health_check_status']) 
             return 'bg-emerald-500';
         case 'failed':
             return 'bg-destructive';
-        case 'running':
-        case 'pending':
-            return 'bg-amber-500';
         default:
             return 'bg-muted-foreground/30';
     }
@@ -93,11 +90,6 @@ function MemberItem({
                 return t('healthCheck.memberStatus.success');
             case 'failed':
                 return t('healthCheck.memberStatus.failed');
-            case 'queued':
-                return t('healthCheck.memberStatus.queued');
-            case 'running':
-            case 'pending':
-                return t('healthCheck.memberStatus.running');
             default:
                 return t('healthCheck.memberStatus.idle');
         }

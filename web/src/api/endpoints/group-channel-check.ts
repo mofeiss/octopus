@@ -111,6 +111,14 @@ export interface GroupChannelCheckSendRequest {
     protocol: GroupChannelCheckProtocol;
 }
 
+export interface GroupChannelCheckProbeRequest {
+    group_id: number;
+    group_item_id?: number;
+    channel_id: number;
+    model_name: string;
+    protocol: GroupChannelCheckProtocol;
+}
+
 export const groupChannelCheckLatestQueryKey = ['group-channel-check', 'latest'] as const;
 export const groupChannelCheckDetailQueryKey = (taskId: number) => ['group-channel-check', 'detail', taskId] as const;
 
@@ -150,6 +158,22 @@ export function useSendGroupChannelCheckTask() {
         },
         onError: (error) => {
             logger.error('渠道测活任务发送失败:', error);
+        },
+    });
+}
+
+export function useProbeGroupChannelCheck() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: GroupChannelCheckProbeRequest) => {
+            return apiClient.post<GroupChannelCheckTaskItem>('/api/v1/group/channel-check/probe', data);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+        },
+        onError: (error) => {
+            logger.error('渠道测活发送失败:', error);
         },
     });
 }

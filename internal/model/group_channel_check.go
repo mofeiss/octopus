@@ -127,6 +127,14 @@ type GroupChannelCheckSendRequest struct {
 	Protocol GroupChannelCheckProtocol `json:"protocol" binding:"required"`
 }
 
+type GroupChannelCheckProbeRequest struct {
+	GroupID     int                       `json:"group_id" binding:"required"`
+	GroupItemID int                       `json:"group_item_id,omitempty"`
+	ChannelID   int                       `json:"channel_id" binding:"required"`
+	ModelName   string                    `json:"model_name" binding:"required"`
+	Protocol    GroupChannelCheckProtocol `json:"protocol" binding:"required"`
+}
+
 type GroupChannelCheckState struct {
 	ID                  int64                       `json:"id" gorm:"primaryKey;autoIncrement:false"` // [fork] Snowflake ID
 	GroupID             int                         `json:"group_id" gorm:"index"`

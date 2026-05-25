@@ -374,67 +374,30 @@
         },
         "healthCheck": {
             "title": "Channel Check",
-            "batchTask": "Batch health-check task",
-            "singleTask": "Single channel health-check task",
-            "creating": "Creating health-check task...",
-            "loading": "Loading health-check result...",
-            "resultList": "Health-check results",
-            "empty": "No health-check details",
-        "progress": "{done} / {total} completed",
-        "actions": {
-            "batch": "Batch",
-            "retry": "Check again",
-            "retrySelected": "Send test",
-            "retryAll": "Recheck all",
-            "syncStatus": "Sync enabled state from this check",
-            "syncStatusSuccess": "Synced: enabled {enabled}, disabled {disabled}, skipped {skipped}",
-            "syncStatusFailed": "Failed to sync enabled state"
-        },
-        "toast": {
-            "created": "Added to health-check queue",
-            "createFailed": "Failed to create health-check task"
-        },
-            "metrics": {
-                "total": "Total",
-                "running": "Running",
-                "success": "Success",
-                "failed": "Failed",
-                "createdAt": "Created"
+            "channelList": "Channel list",
+            "empty": "No channels",
+            "emptyResult": "No test sent",
+            "actions": {
+                "open": "Channel Check",
+                "send": "Send test"
             },
-        "latest": {
-            "pending": "Queued {total}",
-            "running": "Run {done}/{total}",
-            "success": "OK {success}/{total}",
-            "partial": "Part {success}/{total}",
-            "failed": "Fail {failed}"
-        },
-        "status": {
-            "pending": "Queued",
-            "running": "Running",
-            "success": "Success",
-            "partialSuccess": "Partial Success",
-            "failed": "Failed"
-        },
-        "memberStatus": {
-            "idle": "Not checked yet",
-            "queued": "Queued",
-            "running": "Checking",
-            "success": "Last success",
-            "failed": "Last failed"
-        },
-        "auto": {
-            "title": "Auto check with auto disable",
-            "shortTitle": "Auto",
-            "disabled": "Disabled. No background checks or auto enable/disable sync.",
-            "summary": "Check every {interval} minutes, auto disable after {threshold} consecutive failures",
-            "intervalLabel": "Run health check every how many minutes",
-            "failThresholdLabel": "Auto disable after how many consecutive failures",
-            "hint": "Auto health checks always send real upstream requests. A single success clears the failure streak and re-enables the channel immediately.",
-            "save": "Save and enable"
-        },
-        "detail": {
-            "preview": "Result summary",
-            "request": "Request payload",
+            "toast": {
+                "sent": "Test completed",
+                "failed": "Failed to send test"
+            },
+            "status": {
+                "untested": "Untested",
+                "success": "Test passed",
+                "failed": "Test failed"
+            },
+            "memberStatus": {
+                "idle": "Not checked yet",
+                "success": "Last success",
+                "failed": "Last failed"
+            },
+            "detail": {
+                "apiAddress": "API address",
+                "request": "Request payload",
                 "response": "Response payload",
                 "duration": "Duration {value}",
                 "statusCode": "Status {value}"

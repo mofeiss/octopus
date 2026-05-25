@@ -374,66 +374,29 @@
     },
     "healthCheck": {
       "title": "渠道测活",
-      "batchTask": "批量测活任务",
-      "singleTask": "单个渠道测活任务",
-      "creating": "正在创建测活任务...",
-      "loading": "正在加载测活结果...",
-      "resultList": "测活结果",
-      "empty": "暂无测活明细",
-      "progress": "{done} / {total} 已完成",
+      "channelList": "渠道列表",
+      "empty": "暂无渠道",
+      "emptyResult": "未发送测试",
       "actions": {
-        "batch": "批量测活",
-        "retry": "再测一次",
-        "retrySelected": "发送测试",
-        "retryAll": "全部重测",
-        "syncStatus": "按测活结果同步启用状态",
-        "syncStatusSuccess": "已同步：启用 {enabled} 个，禁用 {disabled} 个，跳过 {skipped} 个",
-        "syncStatusFailed": "同步启用状态失败"
+        "open": "渠道测活",
+        "send": "发送测试"
       },
       "toast": {
-        "created": "已加入测活队列",
-        "createFailed": "创建测活任务失败"
-      },
-      "metrics": {
-        "total": "总数",
-        "running": "进行中",
-        "success": "成功",
-        "failed": "失败",
-        "createdAt": "创建时间"
-      },
-      "latest": {
-        "pending": "待测 {total}",
-        "running": "测中 {done}/{total}",
-        "success": "成功 {success}/{total}",
-        "partial": "部分 {success}/{total}",
-        "failed": "失败 {failed}"
+        "sent": "测试已完成",
+        "failed": "发送测试失败"
       },
       "status": {
-        "pending": "待执行",
-        "running": "进行中",
-        "success": "成功",
-        "partialSuccess": "部分成功",
-        "failed": "失败"
+        "untested": "未测试",
+        "success": "测试成功",
+        "failed": "测试失败"
       },
       "memberStatus": {
         "idle": "未测活",
-        "queued": "待发送",
-        "running": "测活中",
         "success": "最近成功",
         "failed": "最近失败"
       },
-      "auto": {
-        "title": "自动测活同步禁用",
-        "shortTitle": "自动测活",
-        "disabled": "关闭后不会自动测活或自动启停渠道",
-        "summary": "每 {interval} 分钟测一次，连续失败 {threshold} 次自动禁用",
-        "intervalLabel": "每隔多久自动测一次（分钟）",
-        "failThresholdLabel": "连续失败几次后自动禁用",
-        "hint": "自动测活会在后台真实发起请求。只要成功 1 次，就会清空连续失败计数并立刻重新启用该渠道。",
-        "save": "保存并启用"
-      },
       "detail": {
-        "preview": "结果摘要",
+        "apiAddress": "API 地址",
         "request": "请求内容",
         "response": "响应内容",
         "duration": "耗时 {value}",
