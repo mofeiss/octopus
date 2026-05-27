@@ -16,7 +16,9 @@ RUN pnpm config set registry https://registry.npmmirror.com && \
 COPY web/ ./
 
 ARG GIT_VERSION=my-dev
-RUN NEXT_PUBLIC_APP_VERSION="${GIT_VERSION}" pnpm run build
+ENV NEXT_PUBLIC_APP_VERSION=${GIT_VERSION} \
+    NEXT_TELEMETRY_DISABLED=1
+RUN ./node_modules/.bin/next build
 
 # Stage 2: Build Go binary
 FROM golang:1.24-alpine AS backend
