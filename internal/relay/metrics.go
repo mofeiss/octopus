@@ -104,6 +104,7 @@ func (m *RelayMetrics) SetStreamPreviewContent(content string) {
 
 func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attempts []model.ChannelAttempt) {
 	duration := time.Since(m.StartTime)
+	clientCanceled := isClientCanceledRelayError(err, attempts)
 
 	globalStats := model.StatsMetrics{
 		WaitTime:    duration.Milliseconds(),
@@ -119,11 +120,16 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	}
 
 	channelID, channelName := finalChannel(attempts)
+	channelStats := globalStats
+	if clientCanceled && !success {
+		// [fork] Client/proxy cancellation is a request outcome, not an upstream channel failure.
+		channelStats.RequestFailed = 0
+	}
 	op.StatsTotalUpdate(globalStats)
 	op.StatsHourlyUpdate(globalStats)
 	op.StatsDailyUpdate(context.Background(), globalStats)
 	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
-	op.StatsChannelUpdate(channelID, globalStats)
+	op.StatsChannelUpdate(channelID, channelStats)
 
 	log.Infof("relay complete: model=%s, channel=%d(%s), success=%t, duration=%dms, input_token=%d, output_token=%d, input_cost=%f, output_cost=%f, total_cost=%f, attempts=%d",
 		m.RequestModel, channelID, channelName, success, duration.Milliseconds(),
@@ -131,7 +137,24 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 		m.Stats.InputCost, m.Stats.OutputCost, m.Stats.InputCost+m.Stats.OutputCost,
 		len(attempts))
 
-	m.saveLog(ctx, err, duration, attempts, channelID, channelName)
+	// [fork] Persist diagnostics even when the inbound request context has been canceled.
+	saveCtx := ctx
+	if saveCtx == nil || saveCtx.Err() != nil {
+		saveCtx = context.Background()
+	}
+	m.saveLog(saveCtx, err, duration, attempts, channelID, channelName)
+}
+
+func isClientCanceledRelayError(err error, attempts []model.ChannelAttempt) bool {
+	if isClientCanceledError(err) {
+		return true
+	}
+	for i := len(attempts) - 1; i >= 0; i-- {
+		if attempts[i].Status == model.AttemptClientCanceled {
+			return true
+		}
+	}
+	return false
 }
 
 func finalChannel(attempts []model.ChannelAttempt) (int, string) {
@@ -142,7 +165,7 @@ func finalChannel(attempts []model.ChannelAttempt) (int, string) {
 		if a.Status == model.AttemptSuccess {
 			return a.ChannelID, a.ChannelName
 		}
-		if a.Status == model.AttemptFailed && lastID == 0 {
+		if (a.Status == model.AttemptFailed || a.Status == model.AttemptClientCanceled) && lastID == 0 {
 			lastID = a.ChannelID
 			lastName = a.ChannelName
 		}

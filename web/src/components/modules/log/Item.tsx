@@ -50,6 +50,20 @@ interface RetryBadgeWithTooltipProps {
     attempts: ChannelAttempt[];
 }
 
+function attemptTone(status: ChannelAttempt['status']) {
+    if (status === 'success') return 'success';
+    if (status === 'client_canceled' || status === 'skipped' || status === 'circuit_break') return 'neutral';
+    return 'failed';
+}
+
+function attemptStatusLabel(status: ChannelAttempt['status'], t: ReturnType<typeof useTranslations>) {
+    if (status === 'success') return t('success');
+    if (status === 'client_canceled') return t('clientCanceled');
+    if (status === 'skipped') return t('skipped');
+    if (status === 'circuit_break') return t('circuitBreak');
+    return t('failed');
+}
+
 function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadgeWithTooltipProps) {
     const t = useTranslations('log.card');
 
@@ -72,12 +86,14 @@ function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadge
                             <Badge
                                 className={cn(
                                     "h-5 shrink-0 px-1.5 text-[10px] font-bold uppercase shadow-none border-0",
-                                    attempt.status === 'success'
+                                    attemptTone(attempt.status) === 'success'
                                         ? "bg-primary/15 text-primary"
-                                        : "bg-destructive/15 text-destructive"
+                                        : attemptTone(attempt.status) === 'neutral'
+                                            ? "bg-secondary text-secondary-foreground"
+                                            : "bg-destructive/15 text-destructive"
                                 )}
                             >
-                                {attempt.status === 'success' ? t('success') : t('failed')}
+                                {attemptStatusLabel(attempt.status, t)}
                             </Badge>
                             <div className="flex min-w-0 flex-col flex-1">
                                 <span className="truncate text-xs font-semibold text-foreground">
@@ -825,9 +841,11 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                                                                         key={idx}
                                                                         className={cn(
                                                                             "text-xs p-2.5 rounded-xl border transition-colors flex flex-col gap-2",
-                                                                            attempt.status === 'success'
+                                                                            attemptTone(attempt.status) === 'success'
                                                                                 ? "bg-primary/5 border-primary/20 hover:bg-primary/10"
-                                                                                : "bg-destructive/5 border-destructive/20 hover:bg-destructive/10"
+                                                                                : attemptTone(attempt.status) === 'neutral'
+                                                                                    ? "bg-secondary/40 border-border/50 hover:bg-secondary/60"
+                                                                                    : "bg-destructive/5 border-destructive/20 hover:bg-destructive/10"
                                                                         )}
                                                                     >
                                                                         <div className="flex items-center gap-2">

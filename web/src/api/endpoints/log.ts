@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 /**
  * 尝试状态
  */
-export type AttemptStatus = 'success' | 'failed' | 'circuit_break' | 'skipped';
+export type AttemptStatus = 'success' | 'failed' | 'circuit_break' | 'skipped' | 'client_canceled';
 
 /**
  * 单次渠道尝试信息

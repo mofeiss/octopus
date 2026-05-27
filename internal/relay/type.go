@@ -19,6 +19,9 @@ import (
 // 默认 32MB，可通过环境变量 OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE 覆盖。
 var maxSSEEventSize = 32 * 1024 * 1024
 
+// [fork] Default first-token timeout for stream attempts when a group leaves it unset.
+const defaultFirstTokenTimeOutSec = 30
+
 func init() {
 	if raw := strings.TrimSpace(os.Getenv(strings.ToUpper(conf.APP_NAME) + "_RELAY_MAX_SSE_EVENT_SIZE")); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil && v > 0 {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,8 +77,13 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	for iter.Next() {
 		select {
 		case <-c.Request.Context().Done():
-			log.Infof("request context canceled, stopping retry")
-			metrics.Save(c.Request.Context(), false, context.Canceled, iter.Attempts())
+			log.Infof("request context canceled by client or upstream proxy, stopping retry")
+			metrics.Save(
+				c.Request.Context(),
+				false,
+				newClientCanceledError(c.Request.Context().Err()),
+				iter.Attempts(),
+			)
 			return
 		default:
 		}
@@ -158,12 +164,16 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 				resolvedType:         resolvedType,
 				channel:              channel,
 				usedKey:              usedKey,
-				firstTokenTimeOutSec: group.FirstTokenTimeOut,
+				firstTokenTimeOutSec: effectiveFirstTokenTimeOutSec(group.FirstTokenTimeOut),
 			}
 
 			result := ra.attempt()
 			if result.Success {
 				metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
+				return
+			}
+			if isClientCanceledError(result.Err) {
+				metrics.Save(c.Request.Context(), false, result.Err, iter.Attempts())
 				return
 			}
 			if result.Written {
@@ -225,16 +235,30 @@ func (ra *relayAttempt) attempt() attemptResult {
 
 	// ====== 失败 ======
 	op.ChannelKeyUpdate(ra.usedKey)
-	span.End(dbmodel.AttemptFailed, statusCode, fwdErr.Error())
+	clientCanceled := isClientCanceledError(fwdErr)
+	displayErr := fwdErr
+	if clientCanceled {
+		displayErr = clientCanceledDisplayError(fwdErr)
+	}
+	attemptStatus := dbmodel.AttemptFailed
+	if clientCanceled {
+		attemptStatus = dbmodel.AttemptClientCanceled
+	}
+	span.End(attemptStatus, statusCode, displayErr.Error())
 
 	// Channel 维度统计
-	op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
-		WaitTime:      span.Duration().Milliseconds(),
-		RequestFailed: 1,
-	})
+	channelMetrics := dbmodel.StatsMetrics{WaitTime: span.Duration().Milliseconds()}
+	if clientCanceled {
+		log.Infof("client/proxy canceled relay attempt; skip channel failure accounting and circuit breaker")
+	} else {
+		channelMetrics.RequestFailed = 1
+	}
+	op.StatsChannelUpdate(ra.channel.ID, channelMetrics)
 
 	// 熔断器：记录失败
-	balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+	if !clientCanceled {
+		balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
+	}
 
 	written := ra.c.Writer.Written()
 	if written {
@@ -244,7 +268,7 @@ func (ra *relayAttempt) attempt() attemptResult {
 	return attemptResult{
 		Success: false,
 		Written: written,
-		Err:     fmt.Errorf("channel %s failed: %v", ra.channel.Name, fwdErr),
+		Err:     fmt.Errorf("channel %s failed: %w", ra.channel.Name, displayErr),
 	}
 }
 
@@ -319,7 +343,10 @@ func (ra *relayAttempt) forward() (int, error) {
 
 	// [fork] tee the upstream body so logs keep the raw response before conversion.
 	rawResponseSnapshot := &bytes.Buffer{}
-	response.Body = io.NopCloser(io.TeeReader(response.Body, rawResponseSnapshot))
+	response.Body = teeReadCloser{
+		Reader: io.TeeReader(response.Body, rawResponseSnapshot),
+		Closer: response.Body,
+	}
 	defer func() {
 		if rawResponseSnapshot.Len() > 0 {
 			ra.metrics.OriginalResponseContent = rawResponseSnapshot.String()
@@ -358,6 +385,41 @@ func (ra *relayAttempt) forward() (int, error) {
 		return 0, err
 	}
 	return response.StatusCode, nil
+}
+
+func effectiveFirstTokenTimeOutSec(configured int) int {
+	if configured > 0 {
+		return configured
+	}
+	return defaultFirstTokenTimeOutSec
+}
+
+// [fork] Preserve Close while teeing the upstream body for diagnostics.
+type teeReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func newFirstTokenTimeoutError(seconds int) error {
+	return fmt.Errorf("first token timeout (%ds)", seconds)
+}
+
+func newClientCanceledError(cause error) error {
+	if cause == nil {
+		cause = context.Canceled
+	}
+	return fmt.Errorf("client/proxy canceled request: 客户端或前置网关取消请求: %w", cause)
+}
+
+func clientCanceledDisplayError(err error) error {
+	if err != nil && strings.Contains(err.Error(), "client/proxy canceled request") {
+		return err
+	}
+	return newClientCanceledError(err)
+}
+
+func isClientCanceledError(err error) bool {
+	return errors.Is(err, context.Canceled)
 }
 
 func (ra *relayAttempt) inboundType() inbound.InboundType {
@@ -456,12 +518,12 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 	for {
 		select {
 		case <-ctx.Done():
-			log.Infof("client disconnected, stopping stream")
-			return nil
+			log.Infof("client/proxy canceled request, stopping stream")
+			return newClientCanceledError(ctx.Err())
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", ra.firstTokenTimeOutSec)
 			_ = response.Body.Close()
-			return fmt.Errorf("first token timeout (%ds)", ra.firstTokenTimeOutSec)
+			return newFirstTokenTimeoutError(ra.firstTokenTimeOutSec)
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end")

@@ -4,10 +4,11 @@ package model
 type AttemptStatus string
 
 const (
-	AttemptSuccess      AttemptStatus = "success"       // 转发成功
-	AttemptFailed       AttemptStatus = "failed"        // 转发失败
-	AttemptCircuitBreak AttemptStatus = "circuit_break" // 熔断跳过
-	AttemptSkipped      AttemptStatus = "skipped"       // 其他原因跳过（禁用、无Key、类型不兼容等）
+	AttemptSuccess        AttemptStatus = "success"         // 转发成功
+	AttemptFailed         AttemptStatus = "failed"          // 转发失败
+	AttemptCircuitBreak   AttemptStatus = "circuit_break"   // 熔断跳过
+	AttemptSkipped        AttemptStatus = "skipped"         // 其他原因跳过（禁用、无Key、类型不兼容等）
+	AttemptClientCanceled AttemptStatus = "client_canceled" // [fork] 客户端或前置网关取消
 )
 
 // ChannelAttempt 记录单次渠道尝试的决策和结果

@@ -467,6 +467,9 @@
             "attempts": "attempts",
             "success": "Success",
             "failed": "Failed",
+            "clientCanceled": "Client canceled",
+            "skipped": "Skipped",
+            "circuitBreak": "Circuit break",
             "user": "User",
             "loadingDetail": "Loading detail...",
             "detailLoadFailed": "Failed to load log detail"

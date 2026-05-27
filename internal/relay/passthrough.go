@@ -138,36 +138,88 @@ func (ra *relayAttempt) handlePassthroughStreamResponse(ctx context.Context, res
 	ra.c.Header("X-Accel-Buffering", "no")
 
 	firstToken := true
-	readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
-	for ev, err := range sse.Read(response.Body, readCfg) {
-		if err != nil {
-			return fmt.Errorf("failed to read passthrough stream event: %w", err)
-		}
 
-		if internalStream, convErr := ra.outAdapter.TransformStream(ctx, []byte(ev.Data)); convErr == nil && internalStream != nil {
-			ra.capturePassthroughInternalStream(internalStream)
-		} else if convErr != nil {
-			log.Debugf("[fork] passthrough stream usage capture skipped: %v", convErr)
+	type sseReadResult struct {
+		event sse.Event
+		err   error
+	}
+	results := make(chan sseReadResult, 1)
+	go func() {
+		defer close(results)
+		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
+		for ev, err := range sse.Read(response.Body, readCfg) {
+			if err != nil {
+				results <- sseReadResult{err: err}
+				return
+			}
+			results <- sseReadResult{event: ev}
 		}
+	}()
 
-		if firstToken {
-			ra.metrics.SetFirstTokenTime(time.Now())
-			firstToken = false
-		}
-
-		if ev.Type != "" {
-			line := []byte("event: " + ev.Type + "\n")
-			_, _ = ra.c.Writer.Write(line)
-		}
-		dataLine := []byte("data: " + ev.Data + "\n\n")
-		_, _ = ra.c.Writer.Write(dataLine)
-		ra.c.Writer.Flush()
+	var firstTokenTimer *time.Timer
+	var firstTokenC <-chan time.Time
+	if firstToken && ra.firstTokenTimeOutSec > 0 {
+		firstTokenTimer = time.NewTimer(time.Duration(ra.firstTokenTimeOutSec) * time.Second)
+		firstTokenC = firstTokenTimer.C
+		defer func() {
+			if firstTokenTimer != nil {
+				firstTokenTimer.Stop()
+			}
+		}()
 	}
 
-	doneLine := []byte("data: [DONE]\n\n")
-	_, _ = ra.c.Writer.Write(doneLine)
-	ra.c.Writer.Flush()
-	return nil
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("client/proxy canceled passthrough stream request")
+			return newClientCanceledError(ctx.Err())
+		case <-firstTokenC:
+			log.Warnf("first token timeout (%ds), switching channel", ra.firstTokenTimeOutSec)
+			_ = response.Body.Close()
+			return newFirstTokenTimeoutError(ra.firstTokenTimeOutSec)
+		case r, ok := <-results:
+			if !ok {
+				log.Infof("passthrough stream end")
+				doneLine := []byte("data: [DONE]\n\n")
+				_, _ = ra.c.Writer.Write(doneLine)
+				ra.c.Writer.Flush()
+				return nil
+			}
+			if r.err != nil {
+				return fmt.Errorf("failed to read passthrough stream event: %w", r.err)
+			}
+			ev := r.event
+
+			if internalStream, convErr := ra.outAdapter.TransformStream(ctx, []byte(ev.Data)); convErr == nil && internalStream != nil {
+				ra.capturePassthroughInternalStream(internalStream)
+			} else if convErr != nil {
+				log.Debugf("[fork] passthrough stream usage capture skipped: %v", convErr)
+			}
+
+			if firstToken {
+				ra.metrics.SetFirstTokenTime(time.Now())
+				firstToken = false
+				if firstTokenTimer != nil {
+					if !firstTokenTimer.Stop() {
+						select {
+						case <-firstTokenTimer.C:
+						default:
+						}
+					}
+					firstTokenTimer = nil
+					firstTokenC = nil
+				}
+			}
+
+			if ev.Type != "" {
+				line := []byte("event: " + ev.Type + "\n")
+				_, _ = ra.c.Writer.Write(line)
+			}
+			dataLine := []byte("data: " + ev.Data + "\n\n")
+			_, _ = ra.c.Writer.Write(dataLine)
+			ra.c.Writer.Flush()
+		}
+	}
 }
 
 func (ra *relayAttempt) handlePassthroughResponse(ctx context.Context, response *http.Response) error {

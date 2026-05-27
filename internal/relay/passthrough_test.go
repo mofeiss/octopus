@@ -1,13 +1,24 @@
 package relay
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
+	openaiInbound "github.com/bestruirui/octopus/internal/transformer/inbound/openai"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
+	openaiOutbound "github.com/bestruirui/octopus/internal/transformer/outbound/openai"
+	"github.com/gin-gonic/gin"
 )
 
 func TestShouldPassthroughSameProtocol(t *testing.T) {
@@ -141,5 +152,75 @@ func TestCapturePassthroughInternalStreamAggregatesContent(t *testing.T) {
 	}
 	if got.Usage == nil || got.Usage.TotalTokens != 12 {
 		t.Fatalf("expected usage to be captured, got %#v", got.Usage)
+	}
+}
+
+func TestHandlePassthroughStreamResponseFirstTokenTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	ginCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
+
+	bodyReader, bodyWriter := io.Pipe()
+	defer bodyWriter.Close()
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       bodyReader,
+	}
+	ra := &relayAttempt{
+		relayRequest: &relayRequest{
+			c:         ginCtx,
+			metrics:   &RelayMetrics{},
+			inAdapter: &openaiInbound.ChatInbound{},
+		},
+		outAdapter:           &openaiOutbound.ChatOutbound{},
+		firstTokenTimeOutSec: 1,
+	}
+
+	start := time.Now()
+	err := ra.handlePassthroughStreamResponse(ctx, response)
+	if err == nil || !strings.Contains(err.Error(), "first token timeout (1s)") {
+		t.Fatalf("expected first token timeout, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Fatalf("timeout took too long: %v", elapsed)
+	}
+}
+
+func TestEffectiveFirstTokenTimeOutDefaultsToThirtySeconds(t *testing.T) {
+	if got := effectiveFirstTokenTimeOutSec(0); got != defaultFirstTokenTimeOutSec {
+		t.Fatalf("expected default timeout %d, got %d", defaultFirstTokenTimeOutSec, got)
+	}
+	if got := effectiveFirstTokenTimeOutSec(9); got != 9 {
+		t.Fatalf("expected configured timeout to win, got %d", got)
+	}
+}
+
+func TestClientCanceledAttemptUsesDedicatedStatus(t *testing.T) {
+	iter := balancer.NewIterator(model.Group{
+		Mode: model.GroupModeFailover,
+		Items: []model.GroupItem{{
+			ChannelID: 1,
+			ModelName: "gpt-test",
+		}},
+	}, 1, "gpt-test")
+	if !iter.Next() {
+		t.Fatal("expected iterator item")
+	}
+	span := iter.StartAttempt(1, 2, "client-canceled-channel")
+	displayErr := clientCanceledDisplayError(context.Canceled)
+	span.End(model.AttemptClientCanceled, 0, displayErr.Error())
+
+	attempts := iter.Attempts()
+	if len(attempts) != 1 {
+		t.Fatalf("expected one attempt, got %d", len(attempts))
+	}
+	if attempts[0].Status != model.AttemptClientCanceled {
+		t.Fatalf("expected client canceled status, got %s", attempts[0].Status)
+	}
+	if !strings.Contains(attempts[0].Msg, "客户端或前置网关取消请求") {
+		t.Fatalf("expected bilingual cancel message, got %q", attempts[0].Msg)
 	}
 }

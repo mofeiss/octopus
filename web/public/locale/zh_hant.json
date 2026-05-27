@@ -467,6 +467,9 @@
             "attempts": "次嘗試",
             "success": "成功",
             "failed": "失敗",
+            "clientCanceled": "客戶端取消",
+            "skipped": "跳過",
+            "circuitBreak": "熔斷",
             "user": "用戶",
             "loadingDetail": "正在載入日誌詳情...",
             "detailLoadFailed": "日誌詳情載入失敗"
