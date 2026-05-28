@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect, useRef, type ReactNode } from 'react';
-import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound, Braces } from 'lucide-react';
+import { Clock, Cpu, Zap, AlertCircle, ArrowDownToLine, ArrowUpFromLine, DollarSign, ArrowRight, ArrowDown, Send, MessageSquare, Loader2, RotateCw, ChevronDown, ChevronUp, Pin, User, KeyRound, Braces, Workflow } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { motion, AnimatePresence } from 'motion/react';
 import JsonView from '@uiw/react-json-view';
@@ -11,9 +11,12 @@ import { useTheme } from 'next-themes';
 import { type RelayLog, type ChannelAttempt, type LogScope, type ParsedLogContent, useLogDetail } from '@/api/endpoints/log';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
-import { type LogRequestSectionKey, type LogResponseSectionKey, useLogDetailStore } from './detail-store';
+import { type LogDetailTabKey, type LogRequestSectionKey, type LogResponseSectionKey, type LogVisualSourceMode, useLogDetailStore } from './detail-store';
+import { MessageFlowVisualizer } from './MessageFlowVisualizer';
+import { detectMessageFlowProtocol, normalizeLogProtocol, parseLogMessageFlow } from './message-flow-parser';
 import {
     MorphingDialog,
     MorphingDialogTrigger,
@@ -235,6 +238,43 @@ function buildProtocolSectionTitle(prefix: string, protocol: string | undefined)
     const normalized = protocol?.trim();
     if (!normalized) return prefix;
     return `${prefix}(${normalized})`;
+}
+
+// [fork] Keep the high-level detail pages mounted so tab hot switching preserves panel state.
+function DetailTabSwitch() {
+    const t = useTranslations('log.card');
+    const activeDetailTab = useLogDetailStore((state) => state.activeDetailTab);
+    const setActiveDetailTab = useLogDetailStore((state) => state.setActiveDetailTab);
+    const tabs: Array<{ value: LogDetailTabKey; label: string; icon: ReactNode }> = [
+        { value: 'json_sse', label: t('jsonSseTab'), icon: <Braces className="size-3.5" /> },
+        { value: 'visualization', label: t('visualizationTab'), icon: <Workflow className="size-3.5" /> },
+    ];
+
+    return (
+        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+            <div className="inline-flex rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
+                {tabs.map((tab) => (
+                    <Button
+                        key={tab.value}
+                        type="button"
+                        variant={activeDetailTab === tab.value ? 'secondary' : 'ghost'}
+                        size="sm"
+                        className={cn(
+                            'h-8 rounded-lg px-2.5 text-xs md:px-3',
+                            activeDetailTab !== tab.value && 'text-muted-foreground hover:text-foreground'
+                        )}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setActiveDetailTab(tab.value);
+                        }}
+                    >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                    </Button>
+                ))}
+            </div>
+        </div>
+    );
 }
 
 function LogContentSection({
@@ -523,30 +563,206 @@ function ResponseContentPanel({
     );
 }
 
-function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: LogScope; onOpenLog?: (id: number) => void }) {
+interface LogDetailContentData {
+    originalRequestContent: string | undefined;
+    outboundRequestContent: string | undefined;
+    originalResponseContent: string | undefined;
+    streamPreviewContent: string | undefined;
+    responseContent: string | undefined;
+    originalRequestProtocol: string | undefined;
+    outboundRequestProtocol: string | undefined;
+    originalRequestParsedContent?: ParsedLogContent;
+    outboundRequestParsedContent?: ParsedLogContent;
+    originalResponseParsedContent?: ParsedLogContent;
+    streamPreviewParsedContent?: ParsedLogContent;
+    responseParsedContent?: ParsedLogContent;
+    isDetailLoading: boolean;
+    isDetailLoadFailed: boolean;
+}
+
+function JsonSseLogDetailView({ log, data }: { log: RelayLog; data: LogDetailContentData }) {
     const t = useTranslations('log.card');
+    const originalRequestTitle = buildProtocolSectionTitle(t('originalRequestLabel'), data.originalRequestProtocol);
+    const outboundRequestTitle = buildProtocolSectionTitle(t('outboundRequestLabel'), data.outboundRequestProtocol);
+
+    return (
+        <div className="h-full min-h-0 overflow-hidden">
+            <div className="grid h-full min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
+                <RequestContentPanel
+                    key={`request-panel-${log.id}`}
+                    inputTokens={log.input_tokens}
+                    isDetailLoading={data.isDetailLoading}
+                    isDetailLoadFailed={data.isDetailLoadFailed}
+                    originalRequestContent={data.originalRequestContent}
+                    originalRequestParsedContent={data.originalRequestParsedContent}
+                    originalRequestTitle={originalRequestTitle}
+                    outboundRequestContent={data.outboundRequestContent}
+                    outboundRequestParsedContent={data.outboundRequestParsedContent}
+                    outboundRequestTitle={outboundRequestTitle}
+                />
+                <ResponseContentPanel
+                    outputTokens={log.output_tokens}
+                    isDetailLoading={data.isDetailLoading}
+                    isDetailLoadFailed={data.isDetailLoadFailed}
+                    originalResponseContent={data.originalResponseContent}
+                    originalResponseParsedContent={data.originalResponseParsedContent}
+                    streamPreviewContent={data.streamPreviewContent}
+                    streamPreviewParsedContent={data.streamPreviewParsedContent}
+                    responseContent={data.responseContent}
+                    responseParsedContent={data.responseParsedContent}
+                />
+            </div>
+        </div>
+    );
+}
+
+function protocolsMatch(data: LogDetailContentData): boolean {
+    const original = normalizeLogProtocol(data.originalRequestProtocol)
+        || detectMessageFlowProtocol(data.originalRequestContent, 'request');
+    const outbound = normalizeLogProtocol(data.outboundRequestProtocol)
+        || detectMessageFlowProtocol(data.outboundRequestContent, 'request');
+    if (!original || !outbound || original === 'unsupported' || outbound === 'unsupported') return true;
+    return original === outbound;
+}
+
+function VisualSourceSwitch({
+    disabled,
+}: {
+    disabled: boolean;
+}) {
+    const t = useTranslations('log.card.visual');
+    const visualSourceMode = useLogDetailStore((state) => state.visualSourceMode);
+    const setVisualSourceMode = useLogDetailStore((state) => state.setVisualSourceMode);
+    const modes: Array<{ value: LogVisualSourceMode; label: string }> = [
+        { value: 'raw', label: t('rawSource') },
+        { value: 'converted', label: t('convertedSource') },
+    ];
+
+    useEffect(() => {
+        if (disabled && visualSourceMode !== 'raw') {
+            setVisualSourceMode('raw');
+        }
+    }, [disabled, setVisualSourceMode, visualSourceMode]);
+
+    if (disabled) return null;
+
+    return (
+        <div className="inline-flex rounded-xl border border-border bg-background p-1">
+            {modes.map((mode) => (
+                <Button
+                    key={mode.value}
+                    type="button"
+                    variant={visualSourceMode === mode.value ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className={cn(
+                        'h-8 rounded-lg px-3 text-xs',
+                        visualSourceMode !== mode.value && 'text-muted-foreground hover:text-foreground'
+                    )}
+                    onClick={() => setVisualSourceMode(mode.value)}
+                >
+                    {mode.label}
+                </Button>
+            ))}
+        </div>
+    );
+}
+
+function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
+    const t = useTranslations('log.card.visual');
+    const visualSourceMode = useLogDetailStore((state) => state.visualSourceMode);
+    const sameProtocol = protocolsMatch(data);
+    const effectiveMode: LogVisualSourceMode = sameProtocol ? 'raw' : visualSourceMode;
+    const parseResult = useMemo(() => {
+        if (effectiveMode === 'converted') {
+            return parseLogMessageFlow({
+                sourceMode: 'converted',
+                requestProtocol: data.outboundRequestProtocol,
+                responseProtocol: data.originalRequestProtocol,
+                requestContent: data.outboundRequestContent,
+                responseContent: data.responseContent,
+                responseFallbackContent: data.streamPreviewContent,
+            });
+        }
+
+        return parseLogMessageFlow({
+            sourceMode: 'raw',
+            requestProtocol: data.originalRequestProtocol,
+            responseProtocol: data.outboundRequestProtocol,
+            requestContent: data.originalRequestContent,
+            responseContent: data.originalResponseContent,
+        });
+    }, [
+        data.originalRequestContent,
+        data.originalRequestProtocol,
+        data.originalResponseContent,
+        data.outboundRequestContent,
+        data.outboundRequestProtocol,
+        data.responseContent,
+        data.streamPreviewContent,
+        effectiveMode,
+    ]);
+
+    if (data.isDetailLoading) {
+        return (
+            <div className="flex h-full items-center justify-center gap-2 rounded-2xl border border-border bg-muted/30 text-xs text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                <span>{t('loading')}</span>
+            </div>
+        );
+    }
+
+    if (data.isDetailLoadFailed) {
+        return (
+            <div className="flex h-full items-center justify-center rounded-2xl border border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
+                {t('detailLoadFailed')}
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex h-full min-h-0 flex-col gap-3 rounded-2xl border border-border bg-muted/20 p-3 md:p-4">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+                        <Workflow className="size-4 text-primary" />
+                        <span>{t('messageFlow')}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        {sameProtocol ? t('rawLockedHint') : t('sourceSwitchHint')}
+                    </p>
+                </div>
+                <VisualSourceSwitch disabled={sameProtocol} />
+            </div>
+            <div className="min-h-0 flex-1">
+                <MessageFlowVisualizer result={parseResult} />
+            </div>
+        </div>
+    );
+}
+
+function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: LogScope; onOpenLog?: (id: number) => void }) {
     const { isOpen } = useMorphingDialog();
     const openStateRef = useRef(false);
     const shouldFetchDetail = isOpen && !!log.content_omitted;
     const detailQuery = useLogDetail({ id: log.id, scope, enabled: shouldFetchDetail });
 
-    const originalRequestContent = detailQuery.data?.original_request_content ?? log.original_request_content;
-    const outboundRequestContent = detailQuery.data?.outbound_request_content ?? log.outbound_request_content;
-    const originalResponseContent = detailQuery.data?.original_response_content ?? log.original_response_content;
-    const streamPreviewContent = detailQuery.data?.stream_preview_content ?? log.stream_preview_content;
-    const responseContent = detailQuery.data?.response_content ?? log.response_content;
-    const originalRequestProtocol = detailQuery.data?.original_request_protocol ?? log.original_request_protocol;
-    const outboundRequestProtocol = detailQuery.data?.outbound_request_protocol ?? log.outbound_request_protocol;
-    const originalRequestParsedContent = detailQuery.data?.parsed_original_request_content ?? log.parsed_original_request_content;
-    const outboundRequestParsedContent = detailQuery.data?.parsed_outbound_request_content ?? log.parsed_outbound_request_content;
-    const originalResponseParsedContent = detailQuery.data?.parsed_original_response_content ?? log.parsed_original_response_content;
-    const streamPreviewParsedContent = detailQuery.data?.parsed_stream_preview_content ?? log.parsed_stream_preview_content;
-    const responseParsedContent = detailQuery.data?.parsed_response_content ?? log.parsed_response_content;
-    const isDetailLoading = shouldFetchDetail && detailQuery.isLoading && !detailQuery.data;
-    const isDetailLoadFailed = shouldFetchDetail && !detailQuery.data && !!detailQuery.error;
-
-    const originalRequestTitle = buildProtocolSectionTitle(t('originalRequestLabel'), originalRequestProtocol);
-    const outboundRequestTitle = buildProtocolSectionTitle(t('outboundRequestLabel'), outboundRequestProtocol);
+    const activeDetailTab = useLogDetailStore((state) => state.activeDetailTab);
+    const data: LogDetailContentData = {
+        originalRequestContent: detailQuery.data?.original_request_content ?? log.original_request_content,
+        outboundRequestContent: detailQuery.data?.outbound_request_content ?? log.outbound_request_content,
+        originalResponseContent: detailQuery.data?.original_response_content ?? log.original_response_content,
+        streamPreviewContent: detailQuery.data?.stream_preview_content ?? log.stream_preview_content,
+        responseContent: detailQuery.data?.response_content ?? log.response_content,
+        originalRequestProtocol: detailQuery.data?.original_request_protocol ?? log.original_request_protocol,
+        outboundRequestProtocol: detailQuery.data?.outbound_request_protocol ?? log.outbound_request_protocol,
+        originalRequestParsedContent: detailQuery.data?.parsed_original_request_content ?? log.parsed_original_request_content,
+        outboundRequestParsedContent: detailQuery.data?.parsed_outbound_request_content ?? log.parsed_outbound_request_content,
+        originalResponseParsedContent: detailQuery.data?.parsed_original_response_content ?? log.parsed_original_response_content,
+        streamPreviewParsedContent: detailQuery.data?.parsed_stream_preview_content ?? log.parsed_stream_preview_content,
+        responseParsedContent: detailQuery.data?.parsed_response_content ?? log.parsed_response_content,
+        isDetailLoading: shouldFetchDetail && detailQuery.isLoading && !detailQuery.data,
+        isDetailLoadFailed: shouldFetchDetail && !detailQuery.data && !!detailQuery.error,
+    };
 
     useEffect(() => {
         if (isOpen && !openStateRef.current) {
@@ -556,31 +772,18 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
     }, [isOpen, log.id, onOpenLog]);
 
     return (
-        <div className="flex-1 min-h-0 overflow-hidden">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full min-h-0">
-                <RequestContentPanel
-                    key={`request-panel-${log.id}`}
-                    inputTokens={log.input_tokens}
-                    isDetailLoading={isDetailLoading}
-                    isDetailLoadFailed={isDetailLoadFailed}
-                    originalRequestContent={originalRequestContent}
-                    originalRequestParsedContent={originalRequestParsedContent}
-                    originalRequestTitle={originalRequestTitle}
-                    outboundRequestContent={outboundRequestContent}
-                    outboundRequestParsedContent={outboundRequestParsedContent}
-                    outboundRequestTitle={outboundRequestTitle}
-                />
-                <ResponseContentPanel
-                    outputTokens={log.output_tokens}
-                    isDetailLoading={isDetailLoading}
-                    isDetailLoadFailed={isDetailLoadFailed}
-                    originalResponseContent={originalResponseContent}
-                    originalResponseParsedContent={originalResponseParsedContent}
-                    streamPreviewContent={streamPreviewContent}
-                    streamPreviewParsedContent={streamPreviewParsedContent}
-                    responseContent={responseContent}
-                    responseParsedContent={responseParsedContent}
-                />
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div
+                className={cn('absolute inset-0 min-h-0', activeDetailTab !== 'json_sse' && 'pointer-events-none invisible')}
+                aria-hidden={activeDetailTab !== 'json_sse'}
+            >
+                <JsonSseLogDetailView log={log} data={data} />
+            </div>
+            <div
+                className={cn('absolute inset-0 min-h-0', activeDetailTab !== 'visualization' && 'pointer-events-none invisible')}
+                aria-hidden={activeDetailTab !== 'visualization'}
+            >
+                <VisualMessageFlowPanel data={data} />
             </div>
         </div>
     );
@@ -712,9 +915,10 @@ export function LogCard({ log, scope = 'admin', onOpenLog }: { log: RelayLog; sc
                 <MorphingDialogContainer>
                     <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
                         <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
-                        <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
+                        <DetailTabSwitch />
+                        <MorphingDialogTitle className="flex max-w-[calc(100%-9rem)] items-center gap-2 mb-3 pr-3 text-sm">
                             <ModelAvatar size={28} />
-                            <span className="font-semibold text-card-foreground">{log.request_model_name}</span>
+                            <span className="truncate font-semibold text-card-foreground">{log.request_model_name}</span>
                             <ArrowRight className="size-3.5 text-muted-foreground/50" />
                             {hasMultipleAttempts ? (
                                 <RetryBadgeWithTooltip

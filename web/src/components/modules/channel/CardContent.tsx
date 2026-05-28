@@ -31,6 +31,8 @@ export function CardContent({ channel, stats, editingRef }: { channel: Channel; 
     const { setIsOpen } = useMorphingDialog();
     const updateChannel = useUpdateChannel();
     const deleteChannel = useDeleteChannel();
+    // [fork] The ref mirrors a parent-controlled open action; reading once preserves the existing initial mode.
+    // eslint-disable-next-line react-hooks/refs
     const [isEditing, setIsEditing] = useState(() => editingRef?.current ?? false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({

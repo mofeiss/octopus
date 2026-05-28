@@ -45,11 +45,17 @@ function SortGroupItem({
 }) {
     return (
         <div
+            // [fork] DnD libraries provide imperative refs/props; this is required for drag behavior.
+            // eslint-disable-next-line react-hooks/refs
             ref={dnd.innerRef}
+            // eslint-disable-next-line react-hooks/refs
             {...dnd.draggableProps}
             className="rounded-lg"
+            // eslint-disable-next-line react-hooks/refs
             style={{
+                /* eslint-disable-next-line react-hooks/refs */
                 ...(dnd.draggableProps?.style ?? {}),
+                /* eslint-disable-next-line react-hooks/refs */
                 ...(dnd.isDragging ? { zIndex: 50, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' } : null),
             }}
         >
@@ -62,6 +68,7 @@ function SortGroupItem({
 
                 <div
                     className="p-0.5 rounded touch-none cursor-grab active:cursor-grabbing hover:bg-muted"
+                    // eslint-disable-next-line react-hooks/refs
                     {...dnd.dragHandleProps}
                 >
                     <GripVertical className="size-3.5 text-muted-foreground" />
