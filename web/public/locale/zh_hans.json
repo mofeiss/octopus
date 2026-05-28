@@ -480,6 +480,7 @@
         "convertedSource": "转换链路",
         "source": "源码",
         "preview": "预览",
+        "copy": "复制",
         "messageFlow": "消息流",
         "request": "请求",
         "response": "响应",

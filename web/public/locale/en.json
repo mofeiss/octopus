@@ -480,6 +480,7 @@
                 "convertedSource": "Converted path",
                 "source": "Source",
                 "preview": "Preview",
+                "copy": "Copy",
                 "messageFlow": "Message Flow",
                 "request": "Request",
                 "response": "Response",

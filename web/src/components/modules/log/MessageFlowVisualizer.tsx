@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, Braces, Code2, FileText, Hammer, MessageSquare, Sparkles, User, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { CopyIconButton } from '@/components/common/CopyButton';
 import { Accordion, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,24 @@ function compactText(value: string | undefined, fallback: string): string {
     const text = value?.replace(/\s+/g, ' ').trim();
     if (!text) return fallback;
     return text.length > 140 ? `${text.slice(0, 140)}...` : text;
+}
+
+function itemSummary(item: MessageFlowItem, fallback: string, toolsLabel: string): string {
+    const tools = item.tools ?? [];
+    if (tools.length > 0) {
+        const names = tools.map((tool) => tool.name).filter(Boolean).join(', ');
+        return names ? `${tools.length} ${toolsLabel}: ${compactText(names, fallback)}` : `${tools.length} ${toolsLabel}`;
+    }
+    return compactText(item.content ?? item.reasoning, fallback);
+}
+
+function itemCopyText(item: MessageFlowItem): string {
+    const parts: string[] = [];
+    if (item.reasoning?.trim()) parts.push(`## Reasoning\n${item.reasoning.trim()}`);
+    if (item.content?.trim()) parts.push(`## Content\n${item.content.trim()}`);
+    if ((item.toolCalls?.length ?? 0) > 0) parts.push(`## Tool Calls\n${formatMessageFlowJson(item.toolCalls)}`);
+    if ((item.tools?.length ?? 0) > 0) parts.push(`## Tools\n${formatMessageFlowJson(item.tools?.map((tool) => tool.raw) ?? [])}`);
+    return parts.join('\n\n');
 }
 
 function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
@@ -191,11 +210,11 @@ function TextBlock({
     );
 }
 
-function JsonDetails({ children }: { children: React.ReactNode }) {
+function JsonDetails({ children, defaultOpen = false }: { children: React.ReactNode; defaultOpen?: boolean }) {
     const t = useTranslations('log.card.visual');
 
     return (
-        <details className="group mt-2 rounded-md border border-border bg-muted/40">
+        <details open={defaultOpen} className="group mt-2 rounded-md border border-border bg-muted/40">
             <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 <Code2 className="size-3.5" />
                 <span>{t('jsonDetails')}</span>
@@ -209,7 +228,7 @@ function JsonDetails({ children }: { children: React.ReactNode }) {
     );
 }
 
-function ToolCallList({ toolCalls }: { toolCalls: MessageFlowToolCall[] }) {
+function ToolCallList({ toolCalls, defaultOpenJson = false }: { toolCalls: MessageFlowToolCall[]; defaultOpenJson?: boolean }) {
     const t = useTranslations('log.card.visual');
 
     return (
@@ -223,7 +242,7 @@ function ToolCallList({ toolCalls }: { toolCalls: MessageFlowToolCall[] }) {
                         {call.id && <span className="font-mono text-[11px] text-muted-foreground">{call.id}</span>}
                     </div>
                     {call.arguments && (
-                        <JsonDetails>
+                        <JsonDetails defaultOpen={defaultOpenJson}>
                             <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">
                                 {call.arguments}
                             </pre>
@@ -277,11 +296,14 @@ function MessageFlowAccordionItem({
     onContentModeChange: (mode: LogVisualContentMode) => void;
 }) {
     const t = useTranslations('log.card.visual');
-    const summary = compactText(item.content ?? item.reasoning, t('noContent'));
+    const summary = itemSummary(item, t('noContent'), t('tools'));
     const hasContent = !!item.content?.trim();
     const hasReasoning = !!item.reasoning?.trim();
     const hasToolCalls = (item.toolCalls?.length ?? 0) > 0;
     const hasTools = (item.tools?.length ?? 0) > 0;
+    const copyText = itemCopyText(item);
+    const hasCopyableContent = !!copyText.trim();
+    const hasFloatingActions = hasCopyableContent || hasContent || hasReasoning;
 
     return (
         <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm data-[state=open]:flex data-[state=open]:h-[min(72vh,calc(100vh-14rem))] data-[state=open]:min-h-[18rem] data-[state=open]:flex-col">
@@ -317,15 +339,28 @@ function MessageFlowAccordionItem({
             <AccordionPrimitive.Content className="flex min-h-0 flex-1 flex-col overflow-hidden text-sm">
                 <div className="flex h-full min-h-0 flex-col border-t border-border pb-3">
                     <div className="relative mt-3 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background/70">
-                        {(hasContent || hasReasoning) && (
-                            <div className="pointer-events-auto absolute right-2 top-2 z-20">
-                                <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
+                        {hasFloatingActions && (
+                            <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1.5">
+                                {hasCopyableContent && (
+                                    <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
+                                        <CopyIconButton
+                                            text={copyText}
+                                            title={t('copy')}
+                                            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                            copyIconClassName="size-3.5"
+                                            checkIconClassName="size-3.5"
+                                        />
+                                    </div>
+                                )}
+                                {(hasContent || hasReasoning) && (
+                                    <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
+                                )}
                             </div>
                         )}
                         <div
                             className={cn(
-                                'h-full min-h-0 overflow-y-scroll overscroll-contain p-3',
-                                (hasContent || hasReasoning) && 'pr-20'
+                                'h-full min-h-0 overflow-y-scroll overscroll-contain p-3 [scrollbar-color:rgba(120,120,120,0.48)_transparent] [scrollbar-width:thin] [-ms-overflow-style:auto] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/35 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/55 [&::-webkit-scrollbar-track]:bg-transparent',
+                                hasFloatingActions && 'pr-28'
                             )}
                             onWheelCapture={(event) => event.stopPropagation()}
                         >
@@ -347,7 +382,7 @@ function MessageFlowAccordionItem({
                                 {hasToolCalls && (
                                     <div className="flex flex-col gap-2">
                                         <SectionTitle icon={<Hammer className="size-3.5" />}>{t('toolCalls')}</SectionTitle>
-                                        <ToolCallList toolCalls={item.toolCalls ?? []} />
+                                        <ToolCallList toolCalls={item.toolCalls ?? []} defaultOpenJson={item.source === 'response'} />
                                     </div>
                                 )}
 

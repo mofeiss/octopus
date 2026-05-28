@@ -270,6 +270,19 @@ function makeItem(params: Omit<MessageFlowItem, 'id'> & { id: string }): Message
     return params;
 }
 
+function makeToolsItem(tools: MessageFlowTool[], protocol: MessageFlowProtocol): MessageFlowItem | null {
+    if (tools.length === 0) return null;
+    return makeItem({
+        id: `request-tools-${protocol}`,
+        role: 'tool',
+        source: 'request',
+        protocol,
+        title: 'tool configuration',
+        tools,
+        raw: tools.map((tool) => tool.raw),
+    });
+}
+
 function titleForRole(role: MessageFlowRole, source: MessageFlowItemSource): string {
     if (source === 'response') return role === 'assistant' ? 'assistant response' : `${role} response`;
     return role;
@@ -308,7 +321,7 @@ function inferProtocolFromSse(events: SseEvent[]): MessageFlowProtocol {
     return 'unsupported';
 }
 
-function parseOpenAIChatRequest(payload: JsonObject, protocol: MessageFlowProtocol, tools: MessageFlowTool[]): MessageFlowItem[] {
+function parseOpenAIChatRequest(payload: JsonObject, protocol: MessageFlowProtocol): MessageFlowItem[] {
     return asArray(payload.messages).map((message, index) => {
         const msg = isRecord(message) ? message : {};
         const role = normalizeRole(msg.role);
@@ -327,13 +340,12 @@ function parseOpenAIChatRequest(payload: JsonObject, protocol: MessageFlowProtoc
             content: contentToText(msg.content),
             reasoning: asString(msg.reasoning_content) ?? asString(msg.reasoning),
             toolCalls,
-            tools,
             raw: message,
         });
     });
 }
 
-function parseResponsesInputItem(item: unknown, index: number, protocol: MessageFlowProtocol, tools: MessageFlowTool[]): MessageFlowItem | null {
+function parseResponsesInputItem(item: unknown, index: number, protocol: MessageFlowProtocol): MessageFlowItem | null {
     if (typeof item === 'string') {
         return makeItem({
             id: `request-responses-input-${index}`,
@@ -342,7 +354,6 @@ function parseResponsesInputItem(item: unknown, index: number, protocol: Message
             protocol,
             title: 'user',
             content: item,
-            tools,
             raw: item,
         });
     }
@@ -357,7 +368,6 @@ function parseResponsesInputItem(item: unknown, index: number, protocol: Message
             protocol,
             title: 'assistant tool call',
             toolCalls: [normalizeToolCall(item, 0)],
-            tools,
             raw: item,
         });
     }
@@ -369,7 +379,6 @@ function parseResponsesInputItem(item: unknown, index: number, protocol: Message
             protocol,
             title: 'tool output',
             content: contentToText(item.output),
-            tools,
             raw: item,
         });
     }
@@ -381,7 +390,6 @@ function parseResponsesInputItem(item: unknown, index: number, protocol: Message
             protocol,
             title: 'assistant reasoning',
             reasoning: extractResponsesReasoning(item),
-            tools,
             raw: item,
         });
     }
@@ -395,12 +403,11 @@ function parseResponsesInputItem(item: unknown, index: number, protocol: Message
         protocol,
         title: titleForRole(role, 'request'),
         content: contentToText(item.content ?? item.text ?? item),
-        tools,
         raw: item,
     });
 }
 
-function parseOpenAIResponsesRequest(payload: JsonObject, protocol: MessageFlowProtocol, tools: MessageFlowTool[]): MessageFlowItem[] {
+function parseOpenAIResponsesRequest(payload: JsonObject, protocol: MessageFlowProtocol): MessageFlowItem[] {
     const items: MessageFlowItem[] = [];
     if (typeof payload.instructions === 'string' && payload.instructions.trim()) {
         items.push(makeItem({
@@ -410,7 +417,6 @@ function parseOpenAIResponsesRequest(payload: JsonObject, protocol: MessageFlowP
             protocol,
             title: 'system',
             content: payload.instructions,
-            tools,
             raw: { instructions: payload.instructions },
         }));
     }
@@ -423,21 +429,20 @@ function parseOpenAIResponsesRequest(payload: JsonObject, protocol: MessageFlowP
             protocol,
             title: 'user',
             content: payload.input,
-            tools,
             raw: payload.input,
         }));
         return items;
     }
 
     for (const [index, inputItem] of asArray(payload.input).entries()) {
-        const parsed = parseResponsesInputItem(inputItem, index, protocol, tools);
+        const parsed = parseResponsesInputItem(inputItem, index, protocol);
         if (parsed) items.push(parsed);
     }
 
     return items;
 }
 
-function parseAnthropicSystem(system: unknown, protocol: MessageFlowProtocol, tools: MessageFlowTool[]): MessageFlowItem | null {
+function parseAnthropicSystem(system: unknown, protocol: MessageFlowProtocol): MessageFlowItem | null {
     const content = contentToText(system);
     if (!content.trim()) return null;
     return makeItem({
@@ -447,14 +452,13 @@ function parseAnthropicSystem(system: unknown, protocol: MessageFlowProtocol, to
         protocol,
         title: 'system',
         content,
-        tools,
         raw: system,
     });
 }
 
-function parseAnthropicRequest(payload: JsonObject, protocol: MessageFlowProtocol, tools: MessageFlowTool[]): MessageFlowItem[] {
+function parseAnthropicRequest(payload: JsonObject, protocol: MessageFlowProtocol): MessageFlowItem[] {
     const items: MessageFlowItem[] = [];
-    const systemItem = parseAnthropicSystem(payload.system, protocol, tools);
+    const systemItem = parseAnthropicSystem(payload.system, protocol);
     if (systemItem) items.push(systemItem);
 
     for (const [index, message] of asArray(payload.messages).entries()) {
@@ -474,7 +478,6 @@ function parseAnthropicRequest(payload: JsonObject, protocol: MessageFlowProtoco
             title: titleForRole(role, 'request'),
             content: contentToText(msg.content),
             toolCalls,
-            tools,
             raw: message,
         }));
     }
@@ -500,15 +503,15 @@ function parseRequestPayload(content: string | undefined, protocolHint?: string)
     switch (protocol) {
         case 'openai_chat': {
             const tools = extractChatTools(payload);
-            return { protocol, tools, warnings, items: parseOpenAIChatRequest(payload, protocol, tools) };
+            return { protocol, tools, warnings, items: parseOpenAIChatRequest(payload, protocol) };
         }
         case 'openai_responses': {
             const tools = extractResponsesTools(payload);
-            return { protocol, tools, warnings, items: parseOpenAIResponsesRequest(payload, protocol, tools) };
+            return { protocol, tools, warnings, items: parseOpenAIResponsesRequest(payload, protocol) };
         }
         case 'anthropic_messages': {
             const tools = extractAnthropicTools(payload);
-            return { protocol, tools, warnings, items: parseAnthropicRequest(payload, protocol, tools) };
+            return { protocol, tools, warnings, items: parseAnthropicRequest(payload, protocol) };
         }
         default:
             return { protocol, items: [], tools: [], warnings, error: 'unsupported_protocol' };
@@ -873,13 +876,14 @@ export function parseLogMessageFlow(input: ParseLogMessageFlowInput): MessageFlo
     }
 
     const errors = [request.error, response.error].filter(Boolean);
+    const toolsItem = makeToolsItem(request.tools, request.protocol);
     return {
         sourceMode: input.sourceMode,
         protocolPair: {
             request: request.protocol,
             response: response.protocol,
         },
-        items: [...request.items, ...response.items].filter((item) => (
+        items: [...request.items, ...(toolsItem ? [toolsItem] : []), ...response.items].filter((item) => (
             item.content?.trim() || item.reasoning?.trim() || (item.toolCalls?.length ?? 0) > 0 || (item.tools?.length ?? 0) > 0
         )),
         tools: request.tools,
