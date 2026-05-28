@@ -1,7 +1,7 @@
 'use client';
 
 // [fork] Render parsed AI request/response payloads as a single message flow.
-import { useEffect, useMemo, useRef } from 'react';
+import { type WheelEvent, useEffect, useMemo, useRef } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -21,6 +21,20 @@ import {
     type MessageFlowToolCall,
 } from './message-flow-parser';
 import { useLogDetailStore, type LogVisualContentMode } from './detail-store';
+
+const visibleScrollbarClass = '[scrollbar-color:rgba(120,120,120,0.48)_transparent] [scrollbar-width:thin] [-ms-overflow-style:auto] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:size-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/35 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/55 [&::-webkit-scrollbar-track]:bg-transparent';
+
+function handleScrollableWheelBoundary(event: WheelEvent<HTMLElement>) {
+    const element = event.currentTarget;
+    const maxScrollTop = element.scrollHeight - element.clientHeight;
+    if (maxScrollTop <= 1 || event.deltaY === 0) return;
+
+    const canScrollUp = element.scrollTop > 0;
+    const canScrollDown = element.scrollTop < maxScrollTop - 1;
+    if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
+        event.stopPropagation();
+    }
+}
 
 function roleIcon(role: MessageFlowRole) {
     switch (role) {
@@ -172,12 +186,18 @@ function MarkdownContent({ content }: { content: string }) {
                         </code>
                     ),
                     pre: ({ children }) => (
-                        <pre className="my-3 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed">
+                        <pre
+                            className={cn('my-3 overflow-auto overscroll-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed', visibleScrollbarClass)}
+                            onWheel={handleScrollableWheelBoundary}
+                        >
                             {children}
                         </pre>
                     ),
                     table: ({ children }) => (
-                        <div className="my-3 overflow-auto rounded-lg border border-border">
+                        <div
+                            className={cn('my-3 overflow-auto overscroll-auto rounded-lg border border-border', visibleScrollbarClass)}
+                            onWheel={handleScrollableWheelBoundary}
+                        >
                             <table className="w-full border-collapse text-left text-xs">{children}</table>
                         </div>
                     ),
@@ -243,7 +263,10 @@ function ToolCallList({ toolCalls, defaultOpenJson = false }: { toolCalls: Messa
                     </div>
                     {call.arguments && (
                         <JsonDetails defaultOpen={defaultOpenJson}>
-                            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">
+                            <pre
+                                className={cn('max-h-60 overflow-auto overscroll-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground', visibleScrollbarClass)}
+                                onWheel={handleScrollableWheelBoundary}
+                            >
                                 {call.arguments}
                             </pre>
                         </JsonDetails>
@@ -272,7 +295,10 @@ function ToolConfigList({ tools }: { tools: MessageFlowTool[] }) {
                     )}
                     {typeof tool.parameters !== 'undefined' && (
                         <JsonDetails>
-                            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-muted-foreground">
+                            <pre
+                                className={cn('max-h-60 overflow-auto overscroll-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-muted-foreground', visibleScrollbarClass)}
+                                onWheel={handleScrollableWheelBoundary}
+                            >
                                 {formatMessageFlowJson(tool.parameters)}
                             </pre>
                         </JsonDetails>
@@ -359,10 +385,11 @@ function MessageFlowAccordionItem({
                         )}
                         <div
                             className={cn(
-                                'h-full min-h-0 overflow-y-scroll overscroll-contain p-3 [scrollbar-color:rgba(120,120,120,0.48)_transparent] [scrollbar-width:thin] [-ms-overflow-style:auto] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/35 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/55 [&::-webkit-scrollbar-track]:bg-transparent',
+                                'h-full min-h-0 overflow-y-scroll overscroll-auto p-3',
+                                visibleScrollbarClass,
                                 hasFloatingActions && 'pr-28'
                             )}
-                            onWheelCapture={(event) => event.stopPropagation()}
+                            onWheel={handleScrollableWheelBoundary}
                         >
                             <div className="flex flex-col gap-4">
                                 {hasReasoning && (
@@ -469,7 +496,7 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
                     </Badge>
                 ))}
             </div>
-            <div className="min-h-0 flex-1 overflow-auto pr-1">
+            <div className={cn('min-h-0 flex-1 overflow-auto overscroll-auto pr-1', visibleScrollbarClass)}>
                 <Accordion
                     type="single"
                     collapsible
