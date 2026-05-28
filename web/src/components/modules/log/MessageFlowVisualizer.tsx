@@ -87,26 +87,31 @@ function ContentModeSwitch({
     onChange: (mode: LogVisualContentMode) => void;
 }) {
     const t = useTranslations('log.card.visual');
+    const modes: Array<{ value: LogVisualContentMode; label: string; icon: React.ReactNode }> = [
+        { value: 'source', label: t('source'), icon: <Code2 className="size-3.5" /> },
+        { value: 'preview', label: t('preview'), icon: <FileText className="size-3.5" /> },
+    ];
 
     return (
         <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
-            {(['source', 'preview'] as const).map((value) => (
+            {modes.map((item) => (
                 <Button
-                    key={value}
+                    key={item.value}
                     type="button"
-                    variant={mode === value ? 'default' : 'ghost'}
-                    size="sm"
-                    aria-pressed={mode === value}
+                    variant={mode === item.value ? 'default' : 'ghost'}
+                    size="icon-sm"
+                    aria-label={item.label}
+                    title={item.label}
+                    aria-pressed={mode === item.value}
                     className={cn(
-                        'h-7 rounded-md px-2 text-xs',
-                        mode === value
+                        'size-7 rounded-md p-0',
+                        mode === item.value
                             ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     )}
-                    onClick={() => onChange(value)}
+                    onClick={() => onChange(item.value)}
                 >
-                    {value === 'source' ? <Code2 className="size-3.5" /> : <FileText className="size-3.5" />}
-                    {value === 'source' ? t('source') : t('preview')}
+                    {item.icon}
                 </Button>
             ))}
         </div>
@@ -279,7 +284,7 @@ function MessageFlowAccordionItem({
     const hasTools = (item.tools?.length ?? 0) > 0;
 
     return (
-        <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm data-[state=open]:max-h-[min(72vh,calc(100vh-14rem))] data-[state=open]:min-h-[18rem] data-[state=open]:flex data-[state=open]:flex-col">
+        <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm data-[state=open]:flex data-[state=open]:h-full data-[state=open]:max-h-[min(72vh,calc(100vh-14rem))] data-[state=open]:min-h-[18rem] data-[state=open]:flex-col">
             <AccordionTrigger className="sticky top-0 z-10 gap-3 bg-card py-3 hover:no-underline">
                 <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
                     <div className="mt-0.5 shrink-0">{roleIcon(item.role)}</div>
@@ -311,41 +316,45 @@ function MessageFlowAccordionItem({
             </AccordionTrigger>
             <AccordionPrimitive.Content className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down min-h-0 flex-1 overflow-hidden text-sm">
                 <div className="flex h-full min-h-0 flex-col border-t border-border pb-3">
-                    {(hasContent || hasReasoning) && (
-                        <div className="flex shrink-0 justify-end bg-card/95 py-3 backdrop-blur">
-                            <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
-                        </div>
-                    )}
+                    <div className="relative mt-3 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background/70">
+                        {(hasContent || hasReasoning) && (
+                            <div className="absolute right-2 top-2 z-10">
+                                <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
+                            </div>
+                        )}
+                        <div className={cn(
+                            'h-full min-h-0 overflow-y-auto overscroll-contain p-3',
+                            (hasContent || hasReasoning) && 'pt-12'
+                        )}>
+                            <div className="flex flex-col gap-4">
+                                {hasReasoning && (
+                                    <div className="flex flex-col gap-2">
+                                        <SectionTitle icon={<Sparkles className="size-3.5" />}>{t('reasoning')}</SectionTitle>
+                                        <TextBlock content={item.reasoning ?? ''} mode={contentMode} />
+                                    </div>
+                                )}
 
-                    <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-background/70 p-3">
-                        <div className="flex flex-col gap-4">
-                            {hasReasoning && (
-                                <div className="flex flex-col gap-2">
-                                    <SectionTitle icon={<Sparkles className="size-3.5" />}>{t('reasoning')}</SectionTitle>
-                                    <TextBlock content={item.reasoning ?? ''} mode={contentMode} />
-                                </div>
-                            )}
+                                {hasContent && (
+                                    <div className="flex flex-col gap-2">
+                                        <SectionTitle icon={<MessageSquare className="size-3.5" />}>{t('content')}</SectionTitle>
+                                        <TextBlock content={item.content ?? ''} mode={contentMode} />
+                                    </div>
+                                )}
 
-                            {hasContent && (
-                                <div className="flex flex-col gap-2">
-                                    <SectionTitle icon={<MessageSquare className="size-3.5" />}>{t('content')}</SectionTitle>
-                                    <TextBlock content={item.content ?? ''} mode={contentMode} />
-                                </div>
-                            )}
+                                {hasToolCalls && (
+                                    <div className="flex flex-col gap-2">
+                                        <SectionTitle icon={<Hammer className="size-3.5" />}>{t('toolCalls')}</SectionTitle>
+                                        <ToolCallList toolCalls={item.toolCalls ?? []} />
+                                    </div>
+                                )}
 
-                            {hasToolCalls && (
-                                <div className="flex flex-col gap-2">
-                                    <SectionTitle icon={<Hammer className="size-3.5" />}>{t('toolCalls')}</SectionTitle>
-                                    <ToolCallList toolCalls={item.toolCalls ?? []} />
-                                </div>
-                            )}
-
-                            {hasTools && (
-                                <div className="flex flex-col gap-2">
-                                    <SectionTitle icon={<Wrench className="size-3.5" />}>{t('tools')}</SectionTitle>
-                                    <ToolConfigList tools={item.tools ?? []} />
-                                </div>
-                            )}
+                                {hasTools && (
+                                    <div className="flex flex-col gap-2">
+                                        <SectionTitle icon={<Wrench className="size-3.5" />}>{t('tools')}</SectionTitle>
+                                        <ToolConfigList tools={item.tools ?? []} />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -354,21 +363,14 @@ function MessageFlowAccordionItem({
     );
 }
 
-function firstRenderableItemId(items: MessageFlowItem[]): string | null {
-    return items.find((item) => (
-        item.content?.trim() || item.reasoning?.trim() || (item.toolCalls?.length ?? 0) > 0 || (item.tools?.length ?? 0) > 0
-    ))?.id ?? null;
-}
-
 export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResult }) {
     const t = useTranslations('log.card.visual');
     const activeVisualItemId = useLogDetailStore((state) => state.activeVisualItemId);
     const setActiveVisualItemId = useLogDetailStore((state) => state.setActiveVisualItemId);
     const visualContentMode = useLogDetailStore((state) => state.visualContentMode);
     const setVisualContentMode = useLogDetailStore((state) => state.setVisualContentMode);
-    const initializedResultKeyRef = useRef<string | null>(null);
+    const previousResultKeyRef = useRef<string | null>(null);
 
-    const firstItemId = useMemo(() => firstRenderableItemId(result.items), [result.items]);
     const activeItemExists = result.items.some((item) => item.id === activeVisualItemId);
     const accordionValue = activeItemExists ? activeVisualItemId : null;
     const resultKey = useMemo(() => (
@@ -376,20 +378,17 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
     ), [result.items, result.protocolPair.request, result.protocolPair.response, result.sourceMode]);
 
     useEffect(() => {
-        if (!firstItemId) {
-            if (activeVisualItemId !== null) setActiveVisualItemId(null);
-            initializedResultKeyRef.current = resultKey;
-            return;
-        }
-        if (initializedResultKeyRef.current !== resultKey) {
-            initializedResultKeyRef.current = resultKey;
-            setActiveVisualItemId(firstItemId);
+        if (previousResultKeyRef.current !== resultKey) {
+            previousResultKeyRef.current = resultKey;
+            if (activeVisualItemId !== null) {
+                setActiveVisualItemId(null);
+            }
             return;
         }
         if (activeVisualItemId && !activeItemExists) {
-            setActiveVisualItemId(firstItemId);
+            setActiveVisualItemId(null);
         }
-    }, [activeItemExists, activeVisualItemId, firstItemId, resultKey, setActiveVisualItemId]);
+    }, [activeItemExists, activeVisualItemId, resultKey, setActiveVisualItemId]);
 
     if (result.error && result.items.length === 0) {
         return (

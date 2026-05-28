@@ -251,8 +251,8 @@ function DetailTabSwitch() {
     ];
 
     return (
-        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
-            <div className="inline-flex rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
+        <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2">
+            <div className="inline-flex rounded-lg border border-border bg-background/95 p-0.5 shadow-sm backdrop-blur">
                 {tabs.map((tab) => (
                     <Button
                         key={tab.value}
@@ -260,7 +260,7 @@ function DetailTabSwitch() {
                         variant={activeDetailTab === tab.value ? 'secondary' : 'ghost'}
                         size="sm"
                         className={cn(
-                            'h-8 rounded-lg px-2.5 text-xs md:px-3',
+                            'h-7 rounded-md px-2 text-xs md:px-2.5',
                             activeDetailTab !== tab.value && 'text-muted-foreground hover:text-foreground'
                         )}
                         onClick={(event) => {
@@ -747,6 +747,7 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
     const detailQuery = useLogDetail({ id: log.id, scope, enabled: shouldFetchDetail });
 
     const activeDetailTab = useLogDetailStore((state) => state.activeDetailTab);
+    const setActiveVisualItemId = useLogDetailStore((state) => state.setActiveVisualItemId);
     const data: LogDetailContentData = {
         originalRequestContent: detailQuery.data?.original_request_content ?? log.original_request_content,
         outboundRequestContent: detailQuery.data?.outbound_request_content ?? log.outbound_request_content,
@@ -766,10 +767,11 @@ function LogContentPanels({ log, scope, onOpenLog }: { log: RelayLog; scope: Log
 
     useEffect(() => {
         if (isOpen && !openStateRef.current) {
+            setActiveVisualItemId(null);
             onOpenLog?.(log.id);
         }
         openStateRef.current = isOpen;
-    }, [isOpen, log.id, onOpenLog]);
+    }, [isOpen, log.id, onOpenLog, setActiveVisualItemId]);
 
     return (
         <div className="relative flex-1 min-h-0 overflow-hidden">
