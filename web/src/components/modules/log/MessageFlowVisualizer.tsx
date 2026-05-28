@@ -1,7 +1,7 @@
 'use client';
 
 // [fork] Render parsed AI request/response payloads as a single message flow.
-import { type RefObject, type WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, type WheelEvent, useEffect, useMemo, useRef } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -194,7 +194,7 @@ function ContentFloatingActions({
 
     return (
         <>
-            <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1.5">
+            <div className="pointer-events-auto absolute right-3.5 top-2 z-20 flex items-center gap-1.5">
                 {children}
                 <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
                     {onExpand && (
@@ -207,7 +207,7 @@ function ContentFloatingActions({
                     </FloatingIconButton>
                 </div>
             </div>
-            <div className="pointer-events-auto absolute bottom-2 right-2 z-20 inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
+            <div className="pointer-events-auto absolute bottom-2 right-3.5 z-20 inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
                 <FloatingIconButton label={t('scrollBottom')} onClick={() => scrollElementToEdge(targetRef.current, 'bottom')}>
                     <ArrowDownToLine className="size-3.5" />
                 </FloatingIconButton>
@@ -468,7 +468,7 @@ function MessageFlowContentPanel({
     );
 }
 
-function ExpandedContentOverlay({
+export function MessageFlowExpandedContentOverlay({
     item,
     contentMode,
     onContentModeChange,
@@ -580,13 +580,18 @@ function MessageFlowAccordionItem({
     );
 }
 
-export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResult }) {
+export function MessageFlowVisualizer({
+    result,
+    onExpandItem,
+}: {
+    result: MessageFlowParseResult;
+    onExpandItem?: (item: MessageFlowItem) => void;
+}) {
     const t = useTranslations('log.card.visual');
     const activeVisualItemId = useLogDetailStore((state) => state.activeVisualItemId);
     const setActiveVisualItemId = useLogDetailStore((state) => state.setActiveVisualItemId);
     const visualContentMode = useLogDetailStore((state) => state.visualContentMode);
     const setVisualContentMode = useLogDetailStore((state) => state.setVisualContentMode);
-    const [expandedContent, setExpandedContent] = useState<{ resultKey: string; itemId: string } | null>(null);
     const previousResultKeyRef = useRef<string | null>(null);
 
     const activeItemExists = result.items.some((item) => item.id === activeVisualItemId);
@@ -594,9 +599,6 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
     const resultKey = useMemo(() => (
         `${result.sourceMode}:${result.protocolPair.request}:${result.protocolPair.response}:${result.items.map((item) => item.id).join('|')}`
     ), [result.items, result.protocolPair.request, result.protocolPair.response, result.sourceMode]);
-    const expandedItem = expandedContent?.resultKey === resultKey
-        ? result.items.find((item) => item.id === expandedContent.itemId)
-        : undefined;
 
     useEffect(() => {
         if (previousResultKeyRef.current !== resultKey) {
@@ -668,19 +670,11 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
                             item={item}
                             contentMode={visualContentMode}
                             onContentModeChange={setVisualContentMode}
-                            onExpand={(nextItem) => setExpandedContent({ resultKey, itemId: nextItem.id })}
+                            onExpand={onExpandItem ?? (() => undefined)}
                         />
                     ))}
                 </Accordion>
             </div>
-            {expandedItem && (
-                <ExpandedContentOverlay
-                    item={expandedItem}
-                    contentMode={visualContentMode}
-                    onContentModeChange={setVisualContentMode}
-                    onClose={() => setExpandedContent(null)}
-                />
-            )}
         </div>
     );
 }

@@ -15,8 +15,8 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { type LogDetailTabKey, type LogRequestSectionKey, type LogResponseSectionKey, type LogVisualSourceMode, useLogDetailStore } from './detail-store';
-import { MessageFlowVisualizer } from './MessageFlowVisualizer';
-import { detectMessageFlowProtocol, normalizeLogProtocol, parseLogMessageFlow } from './message-flow-parser';
+import { MessageFlowExpandedContentOverlay, MessageFlowVisualizer } from './MessageFlowVisualizer';
+import { detectMessageFlowProtocol, normalizeLogProtocol, parseLogMessageFlow, type MessageFlowItem } from './message-flow-parser';
 import {
     MorphingDialog,
     MorphingDialogTrigger,
@@ -670,6 +670,9 @@ function VisualSourceSwitch({
 function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
     const t = useTranslations('log.card.visual');
     const visualSourceMode = useLogDetailStore((state) => state.visualSourceMode);
+    const visualContentMode = useLogDetailStore((state) => state.visualContentMode);
+    const setVisualContentMode = useLogDetailStore((state) => state.setVisualContentMode);
+    const [expandedContent, setExpandedContent] = useState<{ resultKey: string; itemId: string } | null>(null);
     const sameProtocol = protocolsMatch(data);
     const effectiveMode: LogVisualSourceMode = sameProtocol ? 'raw' : visualSourceMode;
     const parseResult = useMemo(() => {
@@ -701,6 +704,15 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
         data.streamPreviewContent,
         effectiveMode,
     ]);
+    const resultKey = useMemo(() => (
+        `${parseResult.sourceMode}:${parseResult.protocolPair.request}:${parseResult.protocolPair.response}:${parseResult.items.map((item) => item.id).join('|')}`
+    ), [parseResult.items, parseResult.protocolPair.request, parseResult.protocolPair.response, parseResult.sourceMode]);
+    const expandedItem = expandedContent?.resultKey === resultKey
+        ? parseResult.items.find((item) => item.id === expandedContent.itemId)
+        : undefined;
+    const handleExpandItem = (item: MessageFlowItem) => {
+        setExpandedContent({ resultKey, itemId: item.id });
+    };
 
     if (data.isDetailLoading) {
         return (
@@ -720,7 +732,7 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
     }
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3 rounded-2xl border border-border bg-muted/20 p-3 md:p-4">
+        <div className="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-2xl border border-border bg-muted/20 p-3 md:p-4">
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2 text-sm font-medium text-card-foreground">
@@ -734,8 +746,16 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
                 <VisualSourceSwitch disabled={sameProtocol} />
             </div>
             <div className="min-h-0 flex-1">
-                <MessageFlowVisualizer result={parseResult} />
+                <MessageFlowVisualizer result={parseResult} onExpandItem={handleExpandItem} />
             </div>
+            {expandedItem && (
+                <MessageFlowExpandedContentOverlay
+                    item={expandedItem}
+                    contentMode={visualContentMode}
+                    onContentModeChange={setVisualContentMode}
+                    onClose={() => setExpandedContent(null)}
+                />
+            )}
         </div>
     );
 }
