@@ -7,6 +7,7 @@ export type LogResponseSectionKey = 'original' | 'preview' | 'outbound';
 export type LogDetailTabKey = 'json_sse' | 'visualization';
 export type LogVisualSourceMode = 'raw' | 'converted';
 export type LogVisualContentMode = 'source' | 'preview';
+export type LogVisualItemClickMode = 'expand' | 'maximize';
 
 interface LogDetailState {
     activeRequestSection: LogRequestSectionKey | null;
@@ -15,12 +16,14 @@ interface LogDetailState {
     visualSourceMode: LogVisualSourceMode;
     activeVisualItemId: string | null;
     visualContentMode: LogVisualContentMode;
+    visualItemClickMode: LogVisualItemClickMode;
     setActiveRequestSection: (section: LogRequestSectionKey | null) => void;
     setActiveResponseSection: (section: LogResponseSectionKey | null) => void;
     setActiveDetailTab: (tab: LogDetailTabKey) => void;
     setVisualSourceMode: (mode: LogVisualSourceMode) => void;
     setActiveVisualItemId: (itemId: string | null) => void;
     setVisualContentMode: (mode: LogVisualContentMode) => void;
+    setVisualItemClickMode: (mode: LogVisualItemClickMode) => void;
 }
 
 export const useLogDetailStore = create<LogDetailState>()(
@@ -32,12 +35,14 @@ export const useLogDetailStore = create<LogDetailState>()(
             visualSourceMode: 'raw',
             activeVisualItemId: null,
             visualContentMode: 'source',
+            visualItemClickMode: 'maximize',
             setActiveRequestSection: (section) => set({ activeRequestSection: section }),
             setActiveResponseSection: (section) => set({ activeResponseSection: section }),
             setActiveDetailTab: (tab) => set({ activeDetailTab: tab }),
             setVisualSourceMode: (mode) => set({ visualSourceMode: mode }),
             setActiveVisualItemId: (itemId) => set({ activeVisualItemId: itemId }),
             setVisualContentMode: (mode) => set({ visualContentMode: mode }),
+            setVisualItemClickMode: (mode) => set({ visualItemClickMode: mode }),
         }),
         {
             name: 'octopus-log-detail',

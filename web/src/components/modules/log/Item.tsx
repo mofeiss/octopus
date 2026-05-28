@@ -673,6 +673,7 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
     const visualContentMode = useLogDetailStore((state) => state.visualContentMode);
     const setVisualContentMode = useLogDetailStore((state) => state.setVisualContentMode);
     const [expandedContent, setExpandedContent] = useState<{ resultKey: string; itemId: string } | null>(null);
+    const expandedOverlayRef = useRef<HTMLDivElement | null>(null);
     const sameProtocol = protocolsMatch(data);
     const effectiveMode: LogVisualSourceMode = sameProtocol ? 'raw' : visualSourceMode;
     const parseResult = useMemo(() => {
@@ -714,6 +715,19 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
         setExpandedContent({ resultKey, itemId: item.id });
     };
 
+    useEffect(() => {
+        if (!expandedItem) return;
+
+        const handlePointerDown = (event: PointerEvent) => {
+            const target = event.target;
+            if (target instanceof Node && expandedOverlayRef.current?.contains(target)) return;
+            setExpandedContent(null);
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown, true);
+        return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+    }, [expandedItem]);
+
     if (data.isDetailLoading) {
         return (
             <div className="flex h-full items-center justify-center gap-2 rounded-2xl border border-border bg-muted/30 text-xs text-muted-foreground">
@@ -747,6 +761,7 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
                     contentMode={visualContentMode}
                     onContentModeChange={setVisualContentMode}
                     onClose={() => setExpandedContent(null)}
+                    contentRef={expandedOverlayRef}
                 />
             )}
         </div>

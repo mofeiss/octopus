@@ -5,7 +5,7 @@ import { type ReactNode, type RefObject, type WheelEvent, useEffect, useMemo, us
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowDownToLine, ArrowUpToLine, Bot, Braces, Code2, FileText, Hammer, Maximize2, MessageSquare, Sparkles, User, Workflow, X, Wrench } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpToLine, Bot, Braces, Code2, FileText, Hammer, Maximize2, MessageSquare, Minimize2, Sparkles, User, Workflow, X, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { Accordion, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -20,7 +20,7 @@ import {
     type MessageFlowTool,
     type MessageFlowToolCall,
 } from './message-flow-parser';
-import { useLogDetailStore, type LogVisualContentMode } from './detail-store';
+import { useLogDetailStore, type LogVisualContentMode, type LogVisualItemClickMode } from './detail-store';
 
 const visibleScrollbarClass = '[scrollbar-color:rgba(120,120,120,0.48)_transparent] [scrollbar-width:thin] [-ms-overflow-style:auto] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:size-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/35 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/55 [&::-webkit-scrollbar-track]:bg-transparent';
 type ScrollEdge = 'top' | 'bottom';
@@ -153,6 +153,44 @@ function ContentModeSwitch({
                     onClick={() => onChange(item.value)}
                 >
                     {item.icon}
+                </Button>
+            ))}
+        </div>
+    );
+}
+
+function ItemClickModeSwitch() {
+    const t = useTranslations('log.card.visual');
+    const visualItemClickMode = useLogDetailStore((state) => state.visualItemClickMode);
+    const setVisualItemClickMode = useLogDetailStore((state) => state.setVisualItemClickMode);
+    const modes: Array<{ value: LogVisualItemClickMode; label: string; icon: React.ReactNode }> = [
+        { value: 'expand', label: t('clickModeExpand'), icon: <Minimize2 className="size-3.5" /> },
+        { value: 'maximize', label: t('clickModeMaximize'), icon: <Maximize2 className="size-3.5" /> },
+    ];
+
+    return (
+        <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
+            {modes.map((mode) => (
+                <Button
+                    key={mode.value}
+                    type="button"
+                    variant={visualItemClickMode === mode.value ? 'default' : 'ghost'}
+                    size="icon-sm"
+                    aria-label={mode.label}
+                    title={mode.label}
+                    aria-pressed={visualItemClickMode === mode.value}
+                    className={cn(
+                        'size-7 rounded-md p-0',
+                        visualItemClickMode === mode.value
+                            ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setVisualItemClickMode(mode.value);
+                    }}
+                >
+                    {mode.icon}
                 </Button>
             ))}
         </div>
@@ -473,11 +511,13 @@ export function MessageFlowExpandedContentOverlay({
     contentMode,
     onContentModeChange,
     onClose,
+    contentRef,
 }: {
     item: MessageFlowItem;
     contentMode: LogVisualContentMode;
     onContentModeChange: (mode: LogVisualContentMode) => void;
     onClose: () => void;
+    contentRef?: RefObject<HTMLDivElement | null>;
 }) {
     const t = useTranslations('log.card.visual');
 
@@ -509,12 +549,14 @@ export function MessageFlowExpandedContentOverlay({
                     <X className="size-4" />
                 </Button>
             </div>
-            <MessageFlowContentPanel
-                item={item}
-                contentMode={contentMode}
-                onContentModeChange={onContentModeChange}
-                expanded
-            />
+            <div ref={contentRef} className="flex min-h-0 flex-1 flex-col">
+                <MessageFlowContentPanel
+                    item={item}
+                    contentMode={contentMode}
+                    onContentModeChange={onContentModeChange}
+                    expanded
+                />
+            </div>
         </div>
     );
 }
@@ -531,13 +573,22 @@ function MessageFlowAccordionItem({
     onExpand: (item: MessageFlowItem) => void;
 }) {
     const t = useTranslations('log.card.visual');
+    const visualItemClickMode = useLogDetailStore((state) => state.visualItemClickMode);
     const summary = itemSummary(item, t('noContent'), t('tools'));
     const hasToolCalls = (item.toolCalls?.length ?? 0) > 0;
     const hasTools = (item.tools?.length ?? 0) > 0;
 
     return (
         <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm">
-            <AccordionTrigger className="shrink-0 gap-3 bg-card py-3 hover:no-underline">
+            <AccordionTrigger
+                className="shrink-0 gap-3 bg-card py-3 hover:no-underline"
+                onClickCapture={(event) => {
+                    if (visualItemClickMode !== 'maximize') return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onExpand(item);
+                }}
+            >
                 <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
                     <div className="mt-0.5 shrink-0">{roleIcon(item.role)}</div>
                     <div className="min-w-0 flex-1">
@@ -662,6 +713,7 @@ export function MessageFlowVisualizer({
                 </div>
                 {(summaryHint || summaryActions) && (
                     <div className="ml-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
+                        <ItemClickModeSwitch />
                         {summaryHint && (
                             <span className="truncate text-right text-xs text-muted-foreground">
                                 {summaryHint}

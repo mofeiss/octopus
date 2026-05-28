@@ -485,6 +485,8 @@
                 "scrollBottom": "Scroll to bottom",
                 "expandContent": "Expand content",
                 "closeExpandedContent": "Close expanded content",
+                "clickModeExpand": "Click item to expand",
+                "clickModeMaximize": "Click item to maximize",
                 "messageFlow": "Message Flow",
                 "request": "Request",
                 "response": "Response",

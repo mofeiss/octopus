@@ -485,6 +485,8 @@
         "scrollBottom": "滚动到底部",
         "expandContent": "放大内容",
         "closeExpandedContent": "关闭放大内容",
+        "clickModeExpand": "点击 item 时展开",
+        "clickModeMaximize": "点击 item 时放大",
         "messageFlow": "消息流",
         "request": "请求",
         "response": "响应",
