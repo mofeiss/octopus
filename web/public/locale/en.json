@@ -510,8 +510,8 @@
                 "using_stream_preview_fallback": "Using final preview fallback",
                 "loading": "Loading detail...",
                 "detailLoadFailed": "Failed to load log detail",
-                "rawLockedHint": "Inbound and upstream protocols match; raw path is locked.",
-                "sourceSwitchHint": "Protocol conversion detected. Switch between raw and converted paths."
+                "rawLockedHint": "Raw path locked",
+                "sourceSwitchHint": "Path switch available"
             }
         }
     },

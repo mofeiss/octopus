@@ -1,11 +1,11 @@
 'use client';
 
 // [fork] Render parsed AI request/response payloads as a single message flow.
-import { type RefObject, type WheelEvent, useEffect, useMemo, useRef } from 'react';
+import { type ReactNode, type RefObject, type WheelEvent, useEffect, useMemo, useRef } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowDownToLine, ArrowUpToLine, Bot, Braces, Code2, FileText, Hammer, Maximize2, MessageSquare, Sparkles, User, X, Wrench } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpToLine, Bot, Braces, Code2, FileText, Hammer, Maximize2, MessageSquare, Sparkles, User, Workflow, X, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { Accordion, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -583,9 +583,13 @@ function MessageFlowAccordionItem({
 export function MessageFlowVisualizer({
     result,
     onExpandItem,
+    summaryHint,
+    summaryActions,
 }: {
     result: MessageFlowParseResult;
     onExpandItem?: (item: MessageFlowItem) => void;
+    summaryHint?: string;
+    summaryActions?: ReactNode;
 }) {
     const t = useTranslations('log.card.visual');
     const activeVisualItemId = useLogDetailStore((state) => state.activeVisualItemId);
@@ -641,18 +645,31 @@ export function MessageFlowVisualizer({
 
     return (
         <div className="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                <Badge variant="secondary" className="text-xs">
-                    {result.items.length} {t('items')}
-                </Badge>
-                <span>{protocolLabel(result.protocolPair.request)}</span>
-                <span>→</span>
-                <span>{protocolLabel(result.protocolPair.response)}</span>
-                {result.warnings.map((warning) => (
-                    <Badge key={warning} variant="outline" className="text-[11px]">
-                        {t(warning)}
+            <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    <Workflow className="size-4 shrink-0 text-primary" />
+                    <Badge variant="secondary" className="text-xs">
+                        {result.items.length} {t('items')}
                     </Badge>
-                ))}
+                    <span>{protocolLabel(result.protocolPair.request)}</span>
+                    <span>→</span>
+                    <span>{protocolLabel(result.protocolPair.response)}</span>
+                    {result.warnings.map((warning) => (
+                        <Badge key={warning} variant="outline" className="text-[11px]">
+                            {t(warning)}
+                        </Badge>
+                    ))}
+                </div>
+                {(summaryHint || summaryActions) && (
+                    <div className="ml-auto flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
+                        {summaryHint && (
+                            <span className="truncate text-right text-xs text-muted-foreground">
+                                {summaryHint}
+                            </span>
+                        )}
+                        {summaryActions}
+                    </div>
+                )}
             </div>
             <div className={cn('min-h-0 flex-1 overflow-auto overscroll-auto pr-1', visibleScrollbarClass)}>
                 <Accordion

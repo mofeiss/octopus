@@ -510,8 +510,8 @@
                 "using_stream_preview_fallback": "使用最終預覽 fallback",
                 "loading": "正在載入日誌詳情...",
                 "detailLoadFailed": "日誌詳情載入失敗",
-                "rawLockedHint": "入站協議和上游協議一致，已鎖定原始鏈路。",
-                "sourceSwitchHint": "協議發生轉換，可在原始鏈路與轉換鏈路之間切換。"
+                "rawLockedHint": "已鎖定原始鏈路",
+                "sourceSwitchHint": "可切換鏈路"
             }
         }
     },

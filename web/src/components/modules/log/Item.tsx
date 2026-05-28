@@ -732,21 +732,14 @@ function VisualMessageFlowPanel({ data }: { data: LogDetailContentData }) {
     }
 
     return (
-        <div className="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-2xl border border-border bg-muted/20 p-3 md:p-4">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-sm font-medium text-card-foreground">
-                        <Workflow className="size-4 text-primary" />
-                        <span>{t('messageFlow')}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        {sameProtocol ? t('rawLockedHint') : t('sourceSwitchHint')}
-                    </p>
-                </div>
-                <VisualSourceSwitch disabled={sameProtocol} />
-            </div>
+        <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-muted/20 p-3 md:p-4">
             <div className="min-h-0 flex-1">
-                <MessageFlowVisualizer result={parseResult} onExpandItem={handleExpandItem} />
+                <MessageFlowVisualizer
+                    result={parseResult}
+                    onExpandItem={handleExpandItem}
+                    summaryHint={sameProtocol ? t('rawLockedHint') : t('sourceSwitchHint')}
+                    summaryActions={<VisualSourceSwitch disabled={sameProtocol} />}
+                />
             </div>
             {expandedItem && (
                 <MessageFlowExpandedContentOverlay

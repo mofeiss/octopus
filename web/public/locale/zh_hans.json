@@ -510,8 +510,8 @@
         "using_stream_preview_fallback": "使用最终预览 fallback",
         "loading": "正在加载日志详情...",
         "detailLoadFailed": "日志详情加载失败",
-        "rawLockedHint": "入站协议和上游协议一致，已锁定原始链路。",
-        "sourceSwitchHint": "协议发生转换，可在原始链路与转换链路之间切换。"
+        "rawLockedHint": "已锁定原始链路",
+        "sourceSwitchHint": "可切换链路"
       }
     }
   },
