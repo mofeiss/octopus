@@ -284,8 +284,8 @@ function MessageFlowAccordionItem({
     const hasTools = (item.tools?.length ?? 0) > 0;
 
     return (
-        <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm data-[state=open]:flex data-[state=open]:h-full data-[state=open]:max-h-[min(72vh,calc(100vh-14rem))] data-[state=open]:min-h-[18rem] data-[state=open]:flex-col">
-            <AccordionTrigger className="sticky top-0 z-10 gap-3 bg-card py-3 hover:no-underline">
+        <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm data-[state=open]:flex data-[state=open]:h-[min(72vh,calc(100vh-14rem))] data-[state=open]:min-h-[18rem] data-[state=open]:flex-col">
+            <AccordionTrigger className="shrink-0 gap-3 bg-card py-3 hover:no-underline">
                 <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
                     <div className="mt-0.5 shrink-0">{roleIcon(item.role)}</div>
                     <div className="min-w-0 flex-1">
@@ -314,18 +314,21 @@ function MessageFlowAccordionItem({
                     </div>
                 </div>
             </AccordionTrigger>
-            <AccordionPrimitive.Content className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down min-h-0 flex-1 overflow-hidden text-sm">
+            <AccordionPrimitive.Content className="flex min-h-0 flex-1 flex-col overflow-hidden text-sm">
                 <div className="flex h-full min-h-0 flex-col border-t border-border pb-3">
                     <div className="relative mt-3 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background/70">
                         {(hasContent || hasReasoning) && (
-                            <div className="absolute right-2 top-2 z-10">
+                            <div className="pointer-events-auto absolute right-2 top-2 z-20">
                                 <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
                             </div>
                         )}
-                        <div className={cn(
-                            'h-full min-h-0 overflow-y-auto overscroll-contain p-3',
-                            (hasContent || hasReasoning) && 'pt-12'
-                        )}>
+                        <div
+                            className={cn(
+                                'h-full min-h-0 overflow-y-scroll overscroll-contain p-3',
+                                (hasContent || hasReasoning) && 'pr-20'
+                            )}
+                            onWheelCapture={(event) => event.stopPropagation()}
+                        >
                             <div className="flex flex-col gap-4">
                                 {hasReasoning && (
                                     <div className="flex flex-col gap-2">
