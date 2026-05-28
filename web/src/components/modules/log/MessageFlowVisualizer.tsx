@@ -1,11 +1,11 @@
 'use client';
 
 // [fork] Render parsed AI request/response payloads as a single message flow.
-import { type WheelEvent, useEffect, useMemo, useRef } from 'react';
+import { type RefObject, type WheelEvent, useEffect, useMemo, useRef, useState } from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, Braces, Code2, FileText, Hammer, MessageSquare, Sparkles, User, Wrench } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpToLine, Bot, Braces, Code2, FileText, Hammer, Maximize2, MessageSquare, Sparkles, User, X, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { CopyIconButton } from '@/components/common/CopyButton';
 import { Accordion, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -23,6 +23,7 @@ import {
 import { useLogDetailStore, type LogVisualContentMode } from './detail-store';
 
 const visibleScrollbarClass = '[scrollbar-color:rgba(120,120,120,0.48)_transparent] [scrollbar-width:thin] [-ms-overflow-style:auto] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:size-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/35 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/55 [&::-webkit-scrollbar-track]:bg-transparent';
+type ScrollEdge = 'top' | 'bottom';
 
 function handleScrollableWheelBoundary(event: WheelEvent<HTMLElement>) {
     const element = event.currentTarget;
@@ -34,6 +35,13 @@ function handleScrollableWheelBoundary(event: WheelEvent<HTMLElement>) {
     if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) {
         event.stopPropagation();
     }
+}
+
+function scrollElementToEdge(element: HTMLElement | null, edge: ScrollEdge) {
+    element?.scrollTo({
+        top: edge === 'top' ? 0 : element.scrollHeight,
+        behavior: 'smooth',
+    });
 }
 
 function roleIcon(role: MessageFlowRole) {
@@ -148,6 +156,63 @@ function ContentModeSwitch({
                 </Button>
             ))}
         </div>
+    );
+}
+
+function FloatingIconButton({
+    label,
+    children,
+    onClick,
+}: {
+    label: string;
+    children: React.ReactNode;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            aria-label={label}
+            title={label}
+            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={onClick}
+        >
+            {children}
+        </button>
+    );
+}
+
+function ContentFloatingActions({
+    targetRef,
+    onExpand,
+    children,
+}: {
+    targetRef: RefObject<HTMLElement | null>;
+    onExpand?: () => void;
+    children?: React.ReactNode;
+}) {
+    const t = useTranslations('log.card.visual');
+
+    return (
+        <>
+            <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1.5">
+                {children}
+                <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
+                    {onExpand && (
+                        <FloatingIconButton label={t('expandContent')} onClick={onExpand}>
+                            <Maximize2 className="size-3.5" />
+                        </FloatingIconButton>
+                    )}
+                    <FloatingIconButton label={t('scrollTop')} onClick={() => scrollElementToEdge(targetRef.current, 'top')}>
+                        <ArrowUpToLine className="size-3.5" />
+                    </FloatingIconButton>
+                </div>
+            </div>
+            <div className="pointer-events-auto absolute bottom-2 right-2 z-20 inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
+                <FloatingIconButton label={t('scrollBottom')} onClick={() => scrollElementToEdge(targetRef.current, 'bottom')}>
+                    <ArrowDownToLine className="size-3.5" />
+                </FloatingIconButton>
+            </div>
+        </>
     );
 }
 
@@ -312,27 +377,166 @@ function ToolConfigList({ tools }: { tools: MessageFlowTool[] }) {
     );
 }
 
-function MessageFlowAccordionItem({
+function MessageFlowContentPanel({
     item,
     contentMode,
     onContentModeChange,
+    onExpand,
+    expanded = false,
 }: {
     item: MessageFlowItem;
     contentMode: LogVisualContentMode;
     onContentModeChange: (mode: LogVisualContentMode) => void;
+    onExpand?: () => void;
+    expanded?: boolean;
 }) {
     const t = useTranslations('log.card.visual');
-    const summary = itemSummary(item, t('noContent'), t('tools'));
+    const scrollRef = useRef<HTMLDivElement | null>(null);
     const hasContent = !!item.content?.trim();
     const hasReasoning = !!item.reasoning?.trim();
     const hasToolCalls = (item.toolCalls?.length ?? 0) > 0;
     const hasTools = (item.tools?.length ?? 0) > 0;
     const copyText = itemCopyText(item);
     const hasCopyableContent = !!copyText.trim();
-    const hasFloatingActions = hasCopyableContent || hasContent || hasReasoning;
+    const hasModeSwitch = hasContent || hasReasoning;
+    const hasFloatingActions = hasCopyableContent || hasModeSwitch || !!onExpand;
 
     return (
-        <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm data-[state=open]:flex data-[state=open]:h-[min(72vh,calc(100vh-14rem))] data-[state=open]:min-h-[18rem] data-[state=open]:flex-col">
+        <div
+            className={cn(
+                'relative min-h-0 overflow-hidden rounded-lg border border-border bg-background/70',
+                expanded ? 'h-full flex-1' : 'max-h-[300px]'
+            )}
+        >
+            <ContentFloatingActions targetRef={scrollRef} onExpand={onExpand}>
+                {hasCopyableContent && (
+                    <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
+                        <CopyIconButton
+                            text={copyText}
+                            title={t('copy')}
+                            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            copyIconClassName="size-3.5"
+                            checkIconClassName="size-3.5"
+                        />
+                    </div>
+                )}
+                {hasModeSwitch && (
+                    <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
+                )}
+            </ContentFloatingActions>
+            <div
+                ref={scrollRef}
+                className={cn(
+                    'min-h-0 overflow-y-auto overscroll-auto p-3 pb-10',
+                    expanded ? 'h-full' : 'max-h-[300px]',
+                    visibleScrollbarClass,
+                    hasFloatingActions && (expanded ? 'pr-36' : 'pr-32')
+                )}
+                onWheel={handleScrollableWheelBoundary}
+            >
+                <div className="flex flex-col gap-4">
+                    {hasReasoning && (
+                        <div className="flex flex-col gap-2">
+                            <SectionTitle icon={<Sparkles className="size-3.5" />}>{t('reasoning')}</SectionTitle>
+                            <TextBlock content={item.reasoning ?? ''} mode={contentMode} />
+                        </div>
+                    )}
+
+                    {hasContent && (
+                        <div className="flex flex-col gap-2">
+                            <SectionTitle icon={<MessageSquare className="size-3.5" />}>{t('content')}</SectionTitle>
+                            <TextBlock content={item.content ?? ''} mode={contentMode} />
+                        </div>
+                    )}
+
+                    {hasToolCalls && (
+                        <div className="flex flex-col gap-2">
+                            <SectionTitle icon={<Hammer className="size-3.5" />}>{t('toolCalls')}</SectionTitle>
+                            <ToolCallList toolCalls={item.toolCalls ?? []} defaultOpenJson={item.source === 'response'} />
+                        </div>
+                    )}
+
+                    {hasTools && (
+                        <div className="flex flex-col gap-2">
+                            <SectionTitle icon={<Wrench className="size-3.5" />}>{t('tools')}</SectionTitle>
+                            <ToolConfigList tools={item.tools ?? []} />
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ExpandedContentOverlay({
+    item,
+    contentMode,
+    onContentModeChange,
+    onClose,
+}: {
+    item: MessageFlowItem;
+    contentMode: LogVisualContentMode;
+    onContentModeChange: (mode: LogVisualContentMode) => void;
+    onClose: () => void;
+}) {
+    const t = useTranslations('log.card.visual');
+
+    return (
+        <div className="absolute inset-0 z-40 flex min-h-0 flex-col rounded-2xl border border-border bg-card p-3 shadow-2xl md:p-4">
+            <div className="mb-3 flex shrink-0 items-center gap-3">
+                <div className="shrink-0">{roleIcon(item.role)}</div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <Badge className={cn('border-0 text-xs shadow-none', roleTone(item.role))}>
+                            {item.originalRole || item.role}
+                        </Badge>
+                        <Badge variant="outline" className="text-[11px]">
+                            {item.source === 'request' ? t('request') : t('response')}
+                        </Badge>
+                        <span className="truncate text-xs text-muted-foreground">{protocolLabel(item.protocol)}</span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{itemSummary(item, t('noContent'), t('tools'))}</p>
+                </div>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('closeExpandedContent')}
+                    title={t('closeExpandedContent')}
+                    className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
+                    onClick={onClose}
+                >
+                    <X className="size-4" />
+                </Button>
+            </div>
+            <MessageFlowContentPanel
+                item={item}
+                contentMode={contentMode}
+                onContentModeChange={onContentModeChange}
+                expanded
+            />
+        </div>
+    );
+}
+
+function MessageFlowAccordionItem({
+    item,
+    contentMode,
+    onContentModeChange,
+    onExpand,
+}: {
+    item: MessageFlowItem;
+    contentMode: LogVisualContentMode;
+    onContentModeChange: (mode: LogVisualContentMode) => void;
+    onExpand: (item: MessageFlowItem) => void;
+}) {
+    const t = useTranslations('log.card.visual');
+    const summary = itemSummary(item, t('noContent'), t('tools'));
+    const hasToolCalls = (item.toolCalls?.length ?? 0) > 0;
+    const hasTools = (item.tools?.length ?? 0) > 0;
+
+    return (
+        <AccordionItem value={item.id} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card px-3 shadow-sm">
             <AccordionTrigger className="shrink-0 gap-3 bg-card py-3 hover:no-underline">
                 <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
                     <div className="mt-0.5 shrink-0">{roleIcon(item.role)}</div>
@@ -363,65 +567,13 @@ function MessageFlowAccordionItem({
                 </div>
             </AccordionTrigger>
             <AccordionPrimitive.Content className="flex min-h-0 flex-1 flex-col overflow-hidden text-sm">
-                <div className="flex h-full min-h-0 flex-col border-t border-border pb-3">
-                    <div className="relative mt-3 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background/70">
-                        {hasFloatingActions && (
-                            <div className="pointer-events-auto absolute right-2 top-2 z-20 flex items-center gap-1.5">
-                                {hasCopyableContent && (
-                                    <div className="inline-flex rounded-lg border border-border bg-background p-0.5 shadow-xs">
-                                        <CopyIconButton
-                                            text={copyText}
-                                            title={t('copy')}
-                                            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                                            copyIconClassName="size-3.5"
-                                            checkIconClassName="size-3.5"
-                                        />
-                                    </div>
-                                )}
-                                {(hasContent || hasReasoning) && (
-                                    <ContentModeSwitch mode={contentMode} onChange={onContentModeChange} />
-                                )}
-                            </div>
-                        )}
-                        <div
-                            className={cn(
-                                'h-full min-h-0 overflow-y-scroll overscroll-auto p-3',
-                                visibleScrollbarClass,
-                                hasFloatingActions && 'pr-28'
-                            )}
-                            onWheel={handleScrollableWheelBoundary}
-                        >
-                            <div className="flex flex-col gap-4">
-                                {hasReasoning && (
-                                    <div className="flex flex-col gap-2">
-                                        <SectionTitle icon={<Sparkles className="size-3.5" />}>{t('reasoning')}</SectionTitle>
-                                        <TextBlock content={item.reasoning ?? ''} mode={contentMode} />
-                                    </div>
-                                )}
-
-                                {hasContent && (
-                                    <div className="flex flex-col gap-2">
-                                        <SectionTitle icon={<MessageSquare className="size-3.5" />}>{t('content')}</SectionTitle>
-                                        <TextBlock content={item.content ?? ''} mode={contentMode} />
-                                    </div>
-                                )}
-
-                                {hasToolCalls && (
-                                    <div className="flex flex-col gap-2">
-                                        <SectionTitle icon={<Hammer className="size-3.5" />}>{t('toolCalls')}</SectionTitle>
-                                        <ToolCallList toolCalls={item.toolCalls ?? []} defaultOpenJson={item.source === 'response'} />
-                                    </div>
-                                )}
-
-                                {hasTools && (
-                                    <div className="flex flex-col gap-2">
-                                        <SectionTitle icon={<Wrench className="size-3.5" />}>{t('tools')}</SectionTitle>
-                                        <ToolConfigList tools={item.tools ?? []} />
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                <div className="border-t border-border py-3">
+                    <MessageFlowContentPanel
+                        item={item}
+                        contentMode={contentMode}
+                        onContentModeChange={onContentModeChange}
+                        onExpand={() => onExpand(item)}
+                    />
                 </div>
             </AccordionPrimitive.Content>
         </AccordionItem>
@@ -434,6 +586,7 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
     const setActiveVisualItemId = useLogDetailStore((state) => state.setActiveVisualItemId);
     const visualContentMode = useLogDetailStore((state) => state.visualContentMode);
     const setVisualContentMode = useLogDetailStore((state) => state.setVisualContentMode);
+    const [expandedContent, setExpandedContent] = useState<{ resultKey: string; itemId: string } | null>(null);
     const previousResultKeyRef = useRef<string | null>(null);
 
     const activeItemExists = result.items.some((item) => item.id === activeVisualItemId);
@@ -441,6 +594,9 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
     const resultKey = useMemo(() => (
         `${result.sourceMode}:${result.protocolPair.request}:${result.protocolPair.response}:${result.items.map((item) => item.id).join('|')}`
     ), [result.items, result.protocolPair.request, result.protocolPair.response, result.sourceMode]);
+    const expandedItem = expandedContent?.resultKey === resultKey
+        ? result.items.find((item) => item.id === expandedContent.itemId)
+        : undefined;
 
     useEffect(() => {
         if (previousResultKeyRef.current !== resultKey) {
@@ -482,7 +638,7 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
     }
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="relative flex h-full min-h-0 flex-col gap-3 overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 <Badge variant="secondary" className="text-xs">
                     {result.items.length} {t('items')}
@@ -512,10 +668,19 @@ export function MessageFlowVisualizer({ result }: { result: MessageFlowParseResu
                             item={item}
                             contentMode={visualContentMode}
                             onContentModeChange={setVisualContentMode}
+                            onExpand={(nextItem) => setExpandedContent({ resultKey, itemId: nextItem.id })}
                         />
                     ))}
                 </Accordion>
             </div>
+            {expandedItem && (
+                <ExpandedContentOverlay
+                    item={expandedItem}
+                    contentMode={visualContentMode}
+                    onContentModeChange={setVisualContentMode}
+                    onClose={() => setExpandedContent(null)}
+                />
+            )}
         </div>
     );
 }
